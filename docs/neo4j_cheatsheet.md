@@ -4,42 +4,6 @@ Schnellreferenz für Neo4j Graph-Datenbank und Cypher Query Language.
 
 ---
 
-## 📦 Neo4j Basics
-
-### Container Management
-
-```bash
-# Neo4j Container starten (aus README)
-docker run -d \
-    --name textadventure-neo4j \
-    -p 7474:7474 \
-    -p 7687:7687 \
-    -e NEO4J_AUTH=neo4j/password \
-    -v neo4j_data:/data \
-    neo4j:latest
-
-# Container stoppen/starten
-docker stop textadventure-neo4j
-docker start textadventure-neo4j
-
-# Container löschen (Achtung: Daten bleiben in Volume!)
-docker rm textadventure-neo4j
-
-# Volume löschen (Alle Daten weg!)
-docker volume rm neo4j_data
-
-# Logs anschauen
-docker logs textadventure-neo4j
-```
-
-### Zugriff
-
-- **Browser UI**: http://localhost:7474
-- **Bolt Protocol**: bolt://localhost:7687
-- **Login**: `neo4j` / `password`
-
----
-
 ## 🏗️ Schema Setup
 
 ### Constraints (Eindeutigkeit sicherstellen)
