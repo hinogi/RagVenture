@@ -145,61 +145,76 @@ textadventure/
 
 ---
 
-### Phase 3: Integration (Woche 3)
+### Phase 3: LLM Narrator & NPCs
 
-- [ ] Game Loop implementieren (State → Render → Input → Parse → Execute)
-- [ ] Win-Condition prüfen
-- [ ] Alle Komponenten verbinden (main.py)
-- [ ] Error-Handling durchgängig
-- [ ] Komplette Story durchspielbar
-- [ ] Bug-Fixes aus erstem Testing
-- [ ] Help-System vollständig
+- [ ] Ollama Setup (llama3, mistral, qwen)
+- [ ] LLM-Service Klasse mit streaming support
+- [ ] **Dynamischer Narrator**: Raumbeschreibungen generieren aus GraphDB-Daten
+- [ ] **NPC-Persönlichkeiten**: Individuelle System-Prompts pro Charakter
+- [ ] **Kontextbewusstsein**: NPCs erinnern sich an vorherige Gespräche
+- [ ] **Stimmungs-System**: NPCs reagieren auf Spieler-Aktionen
+- [ ] **Emergent Storytelling**: Unvorhersehbare Dialoge & Situationen
 
-**Milestone**: Story ist von Anfang bis Ende spielbar
-
----
-
-### Phase 4: Polish (Woche 4)
-
-- [ ] Bug-Fixes (nach Priorität)
-- [ ] README.md mit Setup-Anleitung
-- [ ] Code-Dokumentation
-- [ ] Usability-Verbesserungen (Messages, Feedback)
-- [ ] Edge-Cases abdecken
-- [ ] requirements.txt finalisieren
-- [ ] Finale Tests
-
-**Milestone**: MVP ist auslieferbar
+**Milestone**: NPCs fühlen sich lebendig an
 
 ---
 
-### Phase 5: LLM Integration (v2, Wochen 5-8)
+### Phase 4: Intelligent Parser & Understanding
 
-- [ ] Ollama Setup und erste Tests
-- [ ] Narrator: Dynamische Raumbeschreibungen
-- [ ] NPC-Dialoge über LLM statt statischer Text
-- [ ] System-Prompts pro NPC
-- [ ] Context-Management für Dialoge
+- [ ] **Natural Language Commands**: "Gib dem Wächter das Schwert" statt Keyword-Matching
+- [ ] Embeddings-basierte Intent-Erkennung (sentence-transformers)
+- [ ] Fuzzy-Matching für Objekt/NPC-Namen
+- [ ] **LLM-Parser**: Komplexe Mehrfach-Befehle verstehen
+- [ ] Disambiguation: "Welchen Schlüssel meinst du?" bei Mehrdeutigkeit
+- [ ] Synonym-Handling (gehen/laufen/rennen)
 
----
-
-### Phase 6: Smart Parser (v2, Wochen 9-10)
-
-- [ ] sentence-transformers evaluieren
-- [ ] Embeddings-basierter Parser
-- [ ] Intent-Klassifikation
-- [ ] Natural Language Understanding testen
+**Milestone**: Spiel versteht natürliche Sprache
 
 ---
 
-### Phase 7: Advanced Features (v3, nach Bedarf)
+### Phase 5: Advanced AI Features
 
-- [ ] RAG für NPC-Wissen
-- [ ] Story-Generator (LLM erstellt neue Stories)
-- [ ] Event-Logging (DuckDB)
-- [ ] BI-Dashboard (Streamlit/andere Tools)
-- [ ] Save/Load System
-- [ ] Weitere Stories
+**RAG & Memory:**
+- [ ] RAG für NPC-Weltwissen (Lore, Geschichte, Gerüchte)
+- [ ] Vector-DB Integration (ChromaDB/Weaviate)
+- [ ] Langzeit-Gedächtnis für NPCs über Sessions
+- [ ] Dynamisches Lore-Building (NPCs erfinden konsistente Geschichten)
+
+**Procedural Content:**
+- [ ] **AI Story-Generator**: Neue Quests aus Templates
+- [ ] **Dynamische Items**: LLM generiert Item-Beschreibungen
+- [ ] **Prozedurale Räume**: Dungeons on-the-fly generieren
+- [ ] **Quest-Variationen**: Gleiche Quest, unterschiedliche Narrative
+
+**Multi-Agent Systems:**
+- [ ] **NPC-NPC Interaktionen**: NPCs reden miteinander
+- [ ] **Faction-Dynamics**: Gruppen mit eigenen Zielen
+- [ ] **AI Dungeon Master**: Meta-Agent orchestriert Story-Bögen
+- [ ] **Adaptive Difficulty**: LLM passt Herausforderungen an
+
+---
+
+### Phase 6: Analytics & Meta-Features
+
+- [ ] Event-Logging (DuckDB) für Player-Behaviour
+- [ ] Sentiment-Analyse von Spieler-Eingaben
+- [ ] Story-Branching Visualisierung
+- [ ] A/B Testing verschiedener Prompts
+- [ ] Streamlit Dashboard für NPC-Performance
+- [ ] Player-Journey Analytics
+- [ ] LLM Cost-Tracking & Optimierung
+
+---
+
+### Phase 7: Experimentelle Features
+
+- [ ] **Voice-to-Text**: Speak to NPCs
+- [ ] **Multi-Modal**: DALL-E/Stable Diffusion für Raum-Visuals
+- [ ] **Multiplayer**: Geteilte Welt mit mehreren Spielern
+- [ ] **LLM-Training**: Fine-tuning auf eigene Stories
+- [ ] **Real-Time World**: Welt verändert sich während Offline
+- [ ] **Moralisches Alignment-System**: NPCs beurteilen Spieler-Entscheidungen
+- [ ] **Meta-Narration**: 4th-wall-breaking Erzähler
 
 ---
 
