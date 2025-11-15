@@ -114,40 +114,101 @@ textadventure/
 ---
 
 
-## ✅ Definition of Done (MVP)
+## 🗺️ Roadmap
 
-Das MVP ist fertig, wenn:
+### Phase 1: MVP Foundation (Woche 1)
 
-1. ✅ Spiel startet mit `python src/main.py`
-2. ✅ Story "Die gestohlene Krone" ist durchspielbar
-3. ✅ Alle Befehle funktionieren ohne Crashes
-4. ✅ UI ist lesbar und strukturiert
-5. ✅ Quest ist lösbar
-6. ✅ Hilfe-Funktion erklärt alle Befehle
-7. ✅ Code ist dokumentiert
-8. ✅ README ist aktuell
-9. ✅ Es macht Spaß zu spielen! 🎉
+- [ ] Neo4j Docker-Container aufsetzen
+- [ ] Schema-Design implementieren (Room, Item, NPC, Player Nodes)
+- [ ] Basis-Datenbankoperationen (create, read für Räume und Player)
+- [ ] Spieler-Bewegung zwischen 2 Räumen funktioniert
+- [ ] Rich UI Prototyp mit 3-Panel-Layout
+- [ ] Parser: Grundstruktur + Bewegungsbefehle
+- [ ] Story-Konzept ausarbeiten
+
+**Milestone**: Spieler kann sich im Terminal zwischen Räumen bewegen
 
 ---
 
-## 🚀 Nach dem MVP (v2+)
+### Phase 2: Core Mechanics (Woche 2)
 
-**Phase 2a - LLM Basics:**
-- Ollama Integration
-- Dynamische Raumbeschreibungen
-- NPC-Dialoge mit LLM
+- [ ] Item-System in DB (CONTAINS, CARRIES Relationships)
+- [ ] Item aufnehmen/ablegen funktioniert
+- [ ] NPC-Dialoge (statischer Text aus DB)
+- [ ] Quest-System (WANTS/GIVES Relationships)
+- [ ] Parser: Alle Befehle (take, talk, look, inventory, help, quit)
+- [ ] Story-Loader: JSON → Neo4j
+- [ ] Komplette Story-Datei schreiben (Räume, Items, NPCs, Dialoge)
+- [ ] UI: Farbcodierung und alle Panels
 
-**Phase 2b - Smart Parser:**
-- Embeddings-Parser
-- Natural Language Understanding
+**Milestone**: Alle Einzelkomponenten funktionieren isoliert
 
-**Phase 2c - Advanced AI:**
-- RAG für NPC-Wissen
-- Story-Generator
+---
 
-**Phase 3 - Analytics:**
-- Event-Logging (DuckDB)
-- BI-Dashboard (Streamlit)
+### Phase 3: Integration (Woche 3)
+
+- [ ] Game Loop implementieren (State → Render → Input → Parse → Execute)
+- [ ] Win-Condition prüfen
+- [ ] Alle Komponenten verbinden (main.py)
+- [ ] Error-Handling durchgängig
+- [ ] Komplette Story durchspielbar
+- [ ] Bug-Fixes aus erstem Testing
+- [ ] Help-System vollständig
+
+**Milestone**: Story ist von Anfang bis Ende spielbar
+
+---
+
+### Phase 4: Polish (Woche 4)
+
+- [ ] Bug-Fixes (nach Priorität)
+- [ ] README.md mit Setup-Anleitung
+- [ ] Code-Dokumentation
+- [ ] Usability-Verbesserungen (Messages, Feedback)
+- [ ] Edge-Cases abdecken
+- [ ] requirements.txt finalisieren
+- [ ] Finale Tests
+
+**Milestone**: MVP ist auslieferbar
+
+---
+
+### Phase 5: LLM Integration (v2, Wochen 5-8)
+
+- [ ] Ollama Setup und erste Tests
+- [ ] Narrator: Dynamische Raumbeschreibungen
+- [ ] NPC-Dialoge über LLM statt statischer Text
+- [ ] System-Prompts pro NPC
+- [ ] Context-Management für Dialoge
+
+---
+
+### Phase 6: Smart Parser (v2, Wochen 9-10)
+
+- [ ] sentence-transformers evaluieren
+- [ ] Embeddings-basierter Parser
+- [ ] Intent-Klassifikation
+- [ ] Natural Language Understanding testen
+
+---
+
+### Phase 7: Advanced Features (v3, nach Bedarf)
+
+- [ ] RAG für NPC-Wissen
+- [ ] Story-Generator (LLM erstellt neue Stories)
+- [ ] Event-Logging (DuckDB)
+- [ ] BI-Dashboard (Streamlit/andere Tools)
+- [ ] Save/Load System
+- [ ] Weitere Stories
+
+---
+
+### Laufende Aufgaben (parallel)
+
+- Testing nach jedem Feature
+- Dokumentation aktuell halten
+- Code-Reviews
+- Bug-Tracking
 
 ---
 
