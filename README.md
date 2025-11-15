@@ -117,6 +117,7 @@ textadventure/
 ## 🗺️ Roadmap - Plus Extrafeaturs :D
 
 ### Phase 1: MVP Foundation (Woche 1)
+**Lernziele:** Game Development Fundamentals, MVC-Architektur, Graph-Datenbanken, TUI-Entwicklung
 
 - [ ] Neo4j Docker-Container aufsetzen
 - [ ] Schema-Design implementieren (Room, Item, NPC, Player Nodes)
@@ -126,11 +127,14 @@ textadventure/
 - [ ] Parser: Grundstruktur + Bewegungsbefehle
 - [ ] Story-Konzept ausarbeiten
 
+**Skills:** MVC Pattern, Game Loop Design, Neo4j Graph-Modellierung, Docker, Rich Library, State Management
+
 **Milestone**: Spieler kann sich im Terminal zwischen Räumen bewegen
 
 ---
 
 ### Phase 2: Core Mechanics (Woche 2)
+**Lernziele:** Relationship-Modellierung, Command Pattern, Data Loading, UI/UX Design
 
 - [ ] Item-System in DB (CONTAINS, CARRIES Relationships)
 - [ ] Item aufnehmen/ablegen funktioniert
@@ -141,11 +145,14 @@ textadventure/
 - [ ] Komplette Story-Datei schreiben (Räume, Items, NPCs, Dialoge)
 - [ ] UI: Farbcodierung und alle Panels
 
+**Skills:** Graph Relationships, Command Parser Design, JSON Data Loading, Cypher Queries, Rich Advanced Features
+
 **Milestone**: Alle Einzelkomponenten funktionieren isoliert
 
 ---
 
 ### Phase 3: LLM Narrator & NPCs
+**Lernziele:** LLM Integration, Prompt Engineering, Context Management, AI Personas
 
 - [ ] Ollama Setup (llama3, mistral, qwen)
 - [ ] LLM-Service Klasse mit streaming support
@@ -155,11 +162,14 @@ textadventure/
 - [ ] **Stimmungs-System**: NPCs reagieren auf Spieler-Aktionen
 - [ ] **Emergent Storytelling**: Unvorhersehbare Dialoge & Situationen
 
+**Skills:** Ollama API, System Prompts, Streaming Responses, Conversation History, Prompt Templates, Character Design
+
 **Milestone**: NPCs fühlen sich lebendig an
 
 ---
 
 ### Phase 4: Intelligent Parser & Understanding
+**Lernziele:** Natural Language Processing, Embeddings, Intent Recognition, MCP Architecture
 
 - [ ] **Natural Language Commands**: "Gib dem Wächter das Schwert" statt Keyword-Matching
 - [ ] Embeddings-basierte Intent-Erkennung (sentence-transformers)
@@ -169,11 +179,14 @@ textadventure/
 - [ ] Disambiguation: "Welchen Schlüssel meinst du?" bei Mehrdeutigkeit
 - [ ] Synonym-Handling (gehen/laufen/rennen)
 
+**Skills:** Semantic Search, Vector Embeddings, Intent Classification, Model Context Protocol, Fuzzy String Matching
+
 **Milestone**: Spiel versteht natürliche Sprache
 
 ---
 
 ### Phase 5: Infrastructure Upgrade
+**Lernziele:** Advanced Software Architecture, Service Layer Pattern, Type Safety, UI/UX Advanced
 
 **LangChain/LangGraph Migration:**
 - [ ] LangChain Service-Layer aufbauen
@@ -196,11 +209,14 @@ textadventure/
 - [ ] LLM Output-Validierung (structured output)
 - [ ] Error-Handling durchgängig verbessern
 
+**Skills:** LangChain Architecture, Pydantic Validation, Advanced Rich/Textual, Code Refactoring, Error Handling Patterns
+
 **Milestone**: Solide Foundation für komplexe AI-Features
 
 ---
 
 ### Phase 6: Advanced AI Features
+**Lernziele:** Multi-Agent Systems, RAG Architecture, Vector Databases, Procedural Generation
 
 **RAG & Memory:**
 - [ ] RAG für NPC-Weltwissen (Lore, Geschichte, Gerüchte)
@@ -220,9 +236,12 @@ textadventure/
 - [ ] **AI Dungeon Master**: Meta-Agent orchestriert Story-Bögen
 - [ ] **Adaptive Difficulty**: LLM passt Herausforderungen an
 
+**Skills:** RAG Implementation, ChromaDB/Weaviate, LangGraph State Machines, Agent Orchestration, Procedural Content Gen
+
 ---
 
 ### Phase 7: Analytics & Meta-Features
+**Lernziele:** Data Engineering, Analytics, Metrics & Monitoring, A/B Testing
 
 - [ ] Event-Logging (DuckDB) für Player-Behaviour
 - [ ] Sentiment-Analyse von Spieler-Eingaben
@@ -232,9 +251,12 @@ textadventure/
 - [ ] Player-Journey Analytics
 - [ ] LLM Cost-Tracking & Optimierung
 
+**Skills:** DuckDB, Event-Driven Architecture, Streamlit Dashboards, Sentiment Analysis, Data Visualization, Cost Optimization
+
 ---
 
 ### Phase 8: Experimentelle Features
+**Lernziele:** Emerging AI Technologies, Multi-Modal AI, Real-Time Systems, Fine-Tuning
 
 - [ ] **Voice-to-Text**: Speak to NPCs
 - [ ] **Multi-Modal**: DALL-E/Stable Diffusion für Raum-Visuals
@@ -243,6 +265,8 @@ textadventure/
 - [ ] **Real-Time World**: Welt verändert sich während Offline
 - [ ] **Moralisches Alignment-System**: NPCs beurteilen Spieler-Entscheidungen
 - [ ] **Meta-Narration**: 4th-wall-breaking Erzähler
+
+**Skills:** Whisper/Speech-to-Text, DALL-E/SD APIs, WebSockets, Model Fine-Tuning, Distributed Systems, Reinforcement Learning
 
 ---
 
