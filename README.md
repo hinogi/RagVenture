@@ -119,9 +119,12 @@ textadventure/
 ### Phase 1: MVP Foundation (Woche 1)
 **Lernziele:** Game Development Fundamentals, MVC-Architektur, Graph-Datenbanken, TUI-Entwicklung
 
-- [ ] Neo4j Docker-Container aufsetzen
-- [ ] Schema-Design implementieren (Room, Item, NPC, Player Nodes)
-- [ ] Basis-Datenbankoperationen (create, read für Räume und Player)
+- [x] Neo4j Docker-Container aufsetzen
+- [x] Schema-Design implementieren (Location, Item, NPC, Player Nodes)
+- [x] Constraints & Indexes erstellen
+- [x] Basis-Spielwelt aufbauen (3 Locations, Items, NPCs)
+- [x] Relationships definieren (IST_IN, ERREICHT)
+- [ ] Basis-Datenbankoperationen in Python (create, read für Räume und Player)
 - [ ] Spieler-Bewegung zwischen 2 Räumen funktioniert
 - [ ] Rich UI Prototyp mit 3-Panel-Layout
 - [ ] Parser: Grundstruktur + Bewegungsbefehle
