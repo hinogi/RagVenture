@@ -51,5 +51,20 @@ class GameController:
 
             self.view.show_message(result)
         
+        elif action == 'visit':
+            if not targets:
+                result = self.model.location_connections()
+
+                self.view.show_list("Erreichbare Orte", result)
+                return
+
+            else:
+                result = self.model.move_player(targets[0])
+
+                if result:
+                    self.view.show_message(f'Du bist jetzt in {result[0]['target.name']}')
+                else:
+                    self.view.show_message('Ups, gestolpert.')
+
         else:
             self.view.show_message(f"Befehlt {action} nicht erkannt. Verwende 'show ...', 'visit ...', 'quit'")

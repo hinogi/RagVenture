@@ -62,8 +62,8 @@ class GameModel:
 
     def player_inventory(self):
         query = """
-        MATCH (p:Player {id: 'player'})-[:TRÄGT]->(i:Item)
-        RETURN i.name
+        MATCH (p:Player {id: 'player'})-[:TRÄGT]->(inventory:Item)
+        RETURN inventory.name
         """
 
         return self._run_query(query)
@@ -71,13 +71,13 @@ class GameModel:
     def move_player(self, to_location):
         query = """
         MATCH (p:Player {id: 'player'})-[old:IST_IN]->(current:Location)
-        MATCH (current)-[:ERREICHT]->(target:Location {id: $target_location})
+        MATCH (current)-[:ERREICHT]->(target:Location {id: $to_location})
         DELETE old
         CREATE (p)-[:IST_IN]->(target)
         RETURN target.id, target.name, target.description
         """
 
-        return self._run_query(query)
+        return self._run_query(query, params={'to_location': to_location})
 
     def take_item(self, item):
         query = """
