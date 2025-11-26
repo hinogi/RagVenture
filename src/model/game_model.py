@@ -45,11 +45,23 @@ class GameModel:
 
     def location_content(self):
         query = """
-        MATCH (p:Player {id: 'player'})<-[:IST_IN]-(anything)
-        RETURN anything.id, anything.name, anything.description
+        MATCH (p:Player {id: 'player'})-[:IST_IN]->(loc:Location)
+        MATCH (item)-[:IST_IN]->(loc)
+        WHERE item <> p
+        RETURN item.id, item.name, item.description
         """
 
         return self._run_query(query)
+
+    def location_item(self):
+        query = """
+        MATCH (p:Player {id: 'player'})-[:IST_IN]->(loc:Location)
+        MATCH (item:Item)-[:IST_IN]->(loc)
+        WHERE item <> p
+        RETURN item.id, item.name, item.description
+        """
+
+        return self._run_query(query)    
 
     def location_connections(self):
         query = """
@@ -76,8 +88,8 @@ class GameModel:
         CREATE (p)-[:IST_IN]->(target)
         RETURN target.id, target.name, target.description
         """
-
-        return self._run_query(query, params={'to_location': to_location})
+        params = {'to_location': to_location}
+        return self._run_query(query, params=params)
 
     def take_item(self, item):
         query = """
@@ -88,7 +100,8 @@ class GameModel:
         RETURN i.name, loc.name
         """
 
-        return self._run_query(query)
+        params = {'item': item}
+        return self._run_query(query, params=params)
 
     def use_item(self, item, target):
         pass

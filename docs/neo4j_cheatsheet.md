@@ -44,6 +44,90 @@ WHERE p.age > 25 AND p.name CONTAINS "Ali"
 RETURN p
 ```
 
+### WHERE - Erweiterte Filterung
+
+#### Vergleichsoperatoren
+```cypher
+WHERE item.price > 100              // Größer als
+WHERE item.price >= 100             // Größer oder gleich
+WHERE item.price < 50               // Kleiner als
+WHERE item.price <= 50              // Kleiner oder gleich
+WHERE item.name = 'Schlüssel'       // Gleich
+WHERE item.name <> 'Schlüssel'      // Ungleich (!=)
+```
+
+#### Logische Operatoren
+```cypher
+WHERE item.price > 100 AND item.weight < 5      // Beide Bedingungen
+WHERE item.price > 100 OR item.rarity = 'epic'  // Eine der Bedingungen
+WHERE NOT item.cursed                            // Negation
+WHERE (a = 1 OR b = 2) AND c = 3                // Mit Klammern
+```
+
+#### NULL-Checks
+```cypher
+WHERE item.description IS NULL          // Hat keine Description
+WHERE item.description IS NOT NULL      // Hat eine Description
+```
+
+#### String-Matching
+```cypher
+WHERE item.name STARTS WITH 'Schlü'     // Beginnt mit
+WHERE item.name ENDS WITH 'ssel'        // Endet mit
+WHERE item.name CONTAINS 'üsse'         // Enthält
+WHERE item.name =~ '(?i)schlüssel.*'    // Regex (case-insensitive)
+WHERE toLower(item.name) = 'schlüssel'  // Case-insensitive Vergleich
+```
+
+#### Listen-Operationen
+```cypher
+WHERE item.id IN ['schluessel', 'truhe']    // Ist in Liste
+WHERE 'Item' IN labels(entity)               // Label-Check
+WHERE size(item.tags) > 0                    // Liste hat Elemente
+WHERE any(label IN labels(entity) WHERE label IN ['Item', 'NPC'])  // Beliebiges Label passt
+```
+
+#### Existenz von Relationships
+```cypher
+WHERE EXISTS { (item)-[:LOCKED_BY]->(:Key) }     // Hat diese Beziehung
+WHERE NOT EXISTS { (item)-[:OWNED_BY]->() }      // Hat KEINE Beziehung
+```
+
+#### Properties prüfen
+```cypher
+WHERE exists(item.magic_power)          // Hat Property
+WHERE item.weight IS NOT NULL           // Property existiert und hat Wert
+```
+
+#### Range-Checks
+```cypher
+WHERE item.level BETWEEN 1 AND 10       // Level zwischen 1 und 10
+```
+
+#### Praktische Game-Beispiele
+```cypher
+// Items die leichter als 5kg sind
+WHERE item.weight < 5
+
+// Items die magisch ODER selten sind
+WHERE item.magical = true OR item.rarity = 'rare'
+
+// Items die der Player NICHT im Inventar hat
+WHERE NOT EXISTS { (player)-[:TRÄGT]->(item) }
+
+// NPCs die freundlich sind
+WHERE npc.attitude IN ['friendly', 'neutral']
+
+// Items mit "Schwert" im Namen
+WHERE item.name CONTAINS 'Schwert'
+
+// Items die teuer UND leicht sind
+WHERE item.price > 100 AND item.weight < 2
+
+// Entities mit bestimmtem Label
+WHERE 'Item' IN labels(entity)
+```
+
 ### Relationships abfragen
 ```cypher
 // Gerichtete Beziehung

@@ -60,11 +60,26 @@ class GameController:
 
             else:
                 result = self.model.move_player(targets[0])
+                location = self.model.location_content()
 
                 if result:
-                    self.view.show_message(f'Du bist jetzt in {result[0]['target.name']}')
+                    self.view.show_message(f'Du bist jetzt in {result[0]['target.name']}\n')
+                    self.view.show_message(location)
                 else:
                     self.view.show_message('Ups, gestolpert.')
+
+        elif action == 'take':
+            if not targets:
+                result = self.model.location_item()
+                self.view.show_list("Objekte: ", result)
+                return
+
+            else:
+                result = self.model.take_item(targets)
+                
+                if result:
+                    self.view.show_message(f'Du trägst jetzt {result[0]['i.name']}')
+                    return
 
         else:
             self.view.show_message(f"Befehlt {action} nicht erkannt. Verwende 'show ...', 'visit ...', 'quit'")
