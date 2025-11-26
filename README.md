@@ -2,7 +2,6 @@
 
 Ein textbasiertes Adventure-Game mit Neo4j GraphDB und Rich Terminal UI.
 
-**Timeline:** 4 Wochen MVP, dann AI-Integration in v2  
 **Tech-Stack:** Python, Neo4j, Rich, (später: Ollama)
 
 ---
@@ -179,8 +178,8 @@ python src/main.py
 - [x] Parser: Grundstruktur + Command-Verarbeitung
 - [x] Rich UI Basis mit Welcome Screen
 - [x] Neo4j Warnings unterdrückt (notifications_min_severity='OFF')
-- [ ] Spieler-Bewegung zwischen Räumen implementieren
-- [ ] Items aufnehmen/ablegen funktioniert
+- [X] Spieler-Bewegung zwischen Räumen implementieren
+- [X] Items aufnehmen/ablegen funktioniert
 - [ ] Story-Konzept ausarbeiten
 
 **Skills:** MVC Pattern, Game Loop Design, Neo4j Graph-Modellierung, Docker, Rich Library, State Management

@@ -14,7 +14,7 @@ class GameModel:
                 os.getenv('NEO4J_USER'),
                 os.getenv('NEO4J_PASSWORD')
             ),
-            notifications_min_severity='OFF'
+            # notifications_min_severity='OFF'
         )
 
     def close(self):
@@ -45,11 +45,23 @@ class GameModel:
 
     def location_content(self):
         query = """
-        MATCH (p:Player {id: 'player'})<-[:IST_IN]-(anything)
-        RETURN anything.id, anything.name, anything.description
+        MATCH (p:Player {id: 'player'})-[:IST_IN]->(loc:Location)
+        MATCH (item)-[:IST_IN]->(loc)
+        WHERE item <> p
+        RETURN item.id, item.name, item.description
         """
 
         return self._run_query(query)
+
+    def location_item(self):
+        query = """
+        MATCH (p:Player {id: 'player'})-[:IST_IN]->(loc:Location)
+        MATCH (item:Item)-[:IST_IN]->(loc)
+        WHERE item <> p
+        RETURN item.id, item.name, item.description
+        """
+
+        return self._run_query(query)    
 
     def location_connections(self):
         query = """
@@ -62,8 +74,8 @@ class GameModel:
 
     def player_inventory(self):
         query = """
-        MATCH (p:Player {id: 'player'})-[:TRÄGT]->(i:Item)
-        RETURN i.name
+        MATCH (p:Player {id: 'player'})-[:TRÄGT]->(inventory:Item)
+        RETURN inventory.name
         """
 
         return self._run_query(query)
@@ -71,13 +83,13 @@ class GameModel:
     def move_player(self, to_location):
         query = """
         MATCH (p:Player {id: 'player'})-[old:IST_IN]->(current:Location)
-        MATCH (current)-[:ERREICHT]->(target:Location {id: $target_location})
+        MATCH (current)-[:ERREICHT]->(target:Location {id: $to_location})
         DELETE old
         CREATE (p)-[:IST_IN]->(target)
         RETURN target.id, target.name, target.description
         """
-
-        return self._run_query(query)
+        params = {'to_location': to_location}
+        return self._run_query(query, params=params)
 
     def take_item(self, item):
         query = """
@@ -88,7 +100,20 @@ class GameModel:
         RETURN i.name, loc.name
         """
 
-        return self._run_query(query)
+        params = {'item': item}
+        return self._run_query(query, params=params)
+
+    def drop_item(self, item):
+        query = """
+        MATCH (p:Player {id: 'player'})-[old:TRÄGT]->(i:Item {id: $item})
+        MATCH (p)-[:IST_IN]->(loc:Location)
+        DELETE old
+        CREATE (i)-[:IST_IN]->(loc)
+        RETURN i.name, loc.name
+        """
+
+        params = {'item': item}
+        return self._run_query(query, params=params)
 
     def use_item(self, item, target):
         pass

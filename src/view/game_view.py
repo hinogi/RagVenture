@@ -22,3 +22,13 @@ class GameView:
 
     def show_message(self, prompt):
         self.console.print(f'Antwort: {prompt}')
+    
+    def show_list(self, title, data):
+        if not data:
+            self.console.print(f"[dim]Da ist nichts.[/dim]")
+            return
+
+        self.console.print(f'{title}')
+
+        for item in data:
+            self.console.print(item)
