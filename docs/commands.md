@@ -47,7 +47,7 @@ greif nach dem Hammer
 
 #### `drop` (Ablegen)
 - **Syntax:** `drop <item>` oder `lege <item> ab`
-- **Alias:** ablegen, werfen, lassen, fallenlassen, wegwerfen
+- **Alias:** ablegen, wegwerfen, hinlegen, hinstellen
 - **Objekt:** Item (Name oder ID)
 - **Search Context:** Player-Inventar (via `TRÄGT`)
 - **Preconditions:**
@@ -56,22 +56,11 @@ greif nach dem Hammer
 **Beispiele:**
 ```
 lege den Schlüssel ab
-wirf das Schwert weg
-lass die Fackel fallen
+leg die Fackel hin
+stell das Schwert hin
 ```
 
-#### `inventory` (Inventar anzeigen)
-- **Syntax:** `inventory` oder `inv`
-- **Alias:** inventar, inv, i
-- **Objekt:** Keins
-- **Zeigt:** Alle Items die Player trägt
-
-**Beispiele:**
-```
-inventory
-inv
-zeige inventar
-```
+**Hinweis:** Das Inventar ist keine separate Location - Items mit `IST_IN` → Inventar-Location werden als "getragen" betrachtet.
 
 ---
 
@@ -196,39 +185,36 @@ Der Smart Parser mappt deutsche Verben zu Commands via Embedding-Similarity:
 ```python
 COMMAND_VERBS = {
     'go': [
-        'gehen', 'laufen', 'bewegen', 'besuchen', 'kommen',
-        'geh', 'lauf', 'beweg', 'besuch', 'komm'
+        'gehen', 'laufen', 'bewegen', 'kommen',
+        'marschieren', 'wandern', 'rennen'
     ],
     'take': [
-        'nehmen', 'holen', 'packen', 'greifen', 'schnappen', 'aufheben',
-        'nimm', 'hol', 'pack', 'greif', 'schnapp'
+        'nehmen', 'holen', 'packen', 'greifen', 'aufheben',
+        'mitnehmen', 'aufsammeln', 'einsammeln'
     ],
     'drop': [
-        'ablegen', 'werfen', 'lassen', 'fallenlassen', 'wegwerfen', 'schmeißen',
-        'leg ab', 'wirf', 'lass', 'schmeiß'
+        'ablegen', 'wegwerfen',
+        'hinlegen', 'hinstellen'
     ],
     'use': [
-        'benutzen', 'verwenden', 'anwenden', 'öffnen', 'betätigen', 'probieren',
-        'benutz', 'verwend', 'wend an', 'öffne', 'probier'
+        'benutzen', 'verwenden', 'anwenden', 'öffnen',
+        'einsetzen', 'nutzen', 'gebrauchen', 'bedienen'
     ],
     'examine': [
-        'untersuchen', 'betrachten', 'ansehen', 'anschauen', 'inspizieren',
-        'untersuch', 'betracht', 'sieh an', 'schau an'
+        'untersuchen', 'betrachten', 'inspizieren',
+        'mustern', 'prüfen', 'begutachten', 'analysieren'
     ],
     'read': [
-        'lesen', 'durchlesen', 'vorlesen',
-        'lies', 'les'
+        'lesen', 'durchlesen', 'vorlesen', 'studieren',
+        'entziffern'
     ],
     'talk': [
-        'sprechen', 'reden', 'unterhalten', 'ansprechen',
-        'sprich', 'red', 'sprech an'
+        'sprechen', 'reden', 'unterhalten',
+        'quatschen', 'plaudern', 'kommunizieren'
     ],
     'look': [
-        'schauen', 'umschauen', 'umsehen', 'gucken',
-        'schau', 'sieh', 'guck'
-    ],
-    'inventory': [
-        'inventar', 'inv', 'zeige inventar'
+        'schauen', 'umschauen', 'umsehen', 'gucken', 'ansehen', 'anschauen',
+        'blicken', 'spähen'
     ]
 }
 ```
@@ -257,6 +243,8 @@ Jeder Command sucht nur in relevanten Bereichen:
 | `read` | Inventory + Location Items | Items die `is_readable=True` haben |
 | `talk` | NPCs at Location | `(npc)-[:IST_IN]->(current_loc)` |
 | `look` | Current Location | `(player)-[:IST_IN]->(loc)` |
+
+**Hinweis:** `inventory` ist kein eigener Command mehr - das Inventar wird als spezielle Location behandelt.
 
 **Vorteil:** Reduziert Ambiguität
 
