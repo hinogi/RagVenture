@@ -62,6 +62,8 @@ class SmartParser:
         self.command_emb = {}
 
         for command, verbs in synonyms.items():
+            # Verb finden
+            ## nomen und adjektive raus
             self.command_emb[command] = self.matching_model.encode(verbs)
     
     def _verb_to_command(self, verb):
@@ -117,6 +119,10 @@ class SmartParser:
         }
 
         for token in doc:
+
+            # Verb finden
+            ## alle nomen und adjektive entfernen
+            ## vergleichen
 
             # Hauptverb finden
             if token.dep_ == "ROOT":
