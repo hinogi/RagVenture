@@ -42,7 +42,16 @@ docker start textadv-dev
 # Start Jupyter and run setup notebook
 jupyter notebook
 # Open and execute: notebooks/01-neo4j_dbsetup.ipynb
-# This creates schema constraints, indexes, and initial game world
+# This creates:
+# - Schema constraints (unique IDs)
+# - Vector indexes (for Smart Parser)
+# - Locations, Items, NPCs, Player
+# - Relationships (connections, placements, interactions)
+
+# Das Notebook nutzt Helper-Funktionen für typsichere Erstellung:
+# - create_item(), create_location(), create_npc(), create_player()
+# - connect_locations(), place_item(), make_key_unlock(), etc.
+# - Verhindert Tippfehler bei Relationship-Names
 ```
 
 ### Run Game
@@ -68,9 +77,17 @@ python debug_db.py
 
 **Neo4j Graph Schema:**
 - Nodes: `Player`, `Location`, `Item`, `NPC`
-- Relationships: `IST_IN` (location/containment), `ERREICHT` (location connections), `TRÄGT` (player inventory)
-- All IDs use German property names (e.g., `schluessel`, `taverne`)
-- Player node always has ID `'player'` (not `'player_no1'`)
+- Relationships (vollständige Liste in `docs/world_schema.md`):
+  - `IST_IN` - location/containment (Item/NPC/Player → Location)
+  - `ERREICHT` - location connections (bidirektional)
+  - `TRÄGT` - player/NPC inventory
+  - `ÖFFNET` - item unlocks item/location (Schlüssel → Truhe)
+  - `KANN_ANZÜNDEN` - item lights item (Streichhölzer → Fackel)
+  - `BELEUCHTET` - item illuminates location (Fackel → Finsterwald)
+  - `KANN_BRECHEN` - item breaks item (Hammer → Truhe)
+- All IDs use lowercase, no spaces (e.g., `schluessel`, `taverne`)
+- Player node always has ID `'player'`
+- **WICHTIG:** Nur definierte Relationship-Types nutzen! (siehe `docs/world_schema.md`)
 
 **Cypher Query Patterns:**
 - Always use parameterized queries: `self._run_query(query, params={'key': value})`
@@ -93,14 +110,24 @@ User Input → Parser → Controller → Model → Neo4j → Model → Controlle
 ```
 
 ### Current Game Commands
-- `show location` - Current location details
-- `show directions` - Available exits
-- `show inventory` - Player's carried items
-- `show content` - All entities at current location (Items + NPCs)
-- `visit <location_id>` - Move to connected location (or list all if no target)
-- `take <item_id>` - Pick up item (or list available items if no target)
-- `drop <item_id>` - Drop item at current location (or show inventory if no target)
-- `quit` - Exit game
+
+**Aktuell implementiert:**
+- `show location/directions/inventory/content` - Informationen anzeigen
+- `visit <location>` - Bewegen
+- `take <item>` - Aufnehmen
+- `drop <item>` - Ablegen
+- `quit` - Beenden
+
+**Geplant (Smart Parser Integration):**
+- `go <location>` - Bewegen (natürliche Sprache)
+- `use <item> [on <target>]` - Item benutzen/kombinieren
+- `examine <object>` - Detailliert untersuchen
+- `read <item>` - Lesbares lesen
+- `talk [to] <npc>` - Mit NPC sprechen
+- `look` - Umgebung betrachten
+- `inventory` - Inventar zeigen
+
+**Vollständige Command-Referenz:** `docs/commands.md`
 
 ## Git Workflow
 
@@ -178,15 +205,30 @@ elif action == 'command':
 3. **Relationship directions matter** - `(a)-[:REL]->(b)` is different from `(a)<-[:REL]-(b)`
 4. **Cache issues** - Restart `python src/main.py` after code changes (Python caches modules)
 5. **Label filtering** - Use `:Item` in MATCH or `WHERE 'Item' IN labels(entity)` to filter node types
+6. **Relationship-Types typo-prone** - Nutze Schema-Konstanten aus Notebook (REL_IST_IN, REL_ÖFFNET, etc.)
+7. **IDs must be lowercase, no spaces** - Helper-Funktionen im Notebook erzwingen dies automatisch
+8. **Property-Names sind case-sensitive** - `is_locked` nicht `is_Locked` oder `isLocked`
 
 ## Documentation
 
-- `docs/neo4j_cheatsheet.md` - Comprehensive Cypher WHERE clause reference
-- `docs/architecture_idea.md` - Original architecture vision (for reference, may differ from current state)
+**Schema & Commands:**
+- `docs/world_schema.md` - **START HERE** - Vollständiges Schema (Nodes, Relationships, Properties)
+- `docs/commands.md` - Command-System (alle Commands, Verb-Mapping, Parser-Format)
+
+**Technical Docs:**
+- `docs/smart_parser_architecture.md` - Smart Parser Design (NLP, Embeddings, Entity Resolution)
+- `docs/neo4j_cheatsheet.md` - Cypher WHERE clause reference
+- `docs/architecture_idea.md` - Original architecture vision (für Referenz)
 - `docs/neo4j_docker.md` - Docker setup details
+
+**General:**
 - `README.md` - Setup instructions and roadmap
-- `notebooks/01-neo4j_dbsetup.ipynb` - Database initialization (run this first!)
-- `notebooks/02-neo4j_commands.ipynb` - Query testing and experimentation
+- `CLAUDE.md` - This file
+
+**Notebooks:**
+- `notebooks/01-neo4j_dbsetup.ipynb` - **Database initialization mit Helper-Funktionen**
+- `notebooks/02-neo4j_commands.ipynb` - Query testing
+- `notebooks/03-smart-parser.ipynb` - Smart Parser development & testing
 
 ## Future Roadmap Context
 
