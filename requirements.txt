@@ -4,6 +4,9 @@ python-dotenv>=1.0.0
 jupyter>=1.0.0
 sentence-transformers>=3.0.0
 spacy>=3.8.0
+umap
+pandas
+plotly
 
 # spaCy Models (install separately):
 # python -m spacy download de_core_news_lg

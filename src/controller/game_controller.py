@@ -1,14 +1,14 @@
 
 from view.game_view import GameView
 from model.game_model import GameModel
-from utils.command_parser import CommandParser
+from utils.smart_parser import SmartParser
 
 class GameController:
 
     def __init__(self):
         self.view = GameView()
         self.model = GameModel()
-        self.parser = CommandParser()
+        self.parser = SmartParser()
         self.running = False
 
     def run_game(self):
@@ -23,15 +23,17 @@ class GameController:
 
         parsed = self.parser.parse(command)
 
-        action = parsed['action']
-        targets = parsed['targets']
+        action = parsed[0]['action']
+        targets = parsed[0]['targets']
+
+        print(parsed)
 
         if action == 'quit':
 
             self.running = False
             self.view.show_message('Tschüss!')
 
-        elif action == 'show':
+        elif action == 'look':
 
             if not targets:
                 self.view.show_message('Was möchtest Du sehen ("show ...)"?')
@@ -53,7 +55,7 @@ class GameController:
 
             self.view.show_list('Hier gibts: ', result)
         
-        elif action == 'visit':
+        elif action == 'go':
             if not targets:
                 result = self.model.location_connections()
 
