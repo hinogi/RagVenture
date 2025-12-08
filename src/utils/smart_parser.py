@@ -3,6 +3,7 @@ import spacy
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from sentence_transformers import SentenceTransformer, util
+from utils.command_templates import COMMAND_TEMPLATES, CommandTemplate
 
 load_dotenv(dotenv_path='../.env')
 
@@ -15,56 +16,13 @@ class SmartParser:
         self.parsing_model = spacy.load("de_dep_news_trf")
         self.matching_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
-        # command matching
-        synonyms = {
-            'go': [
-                # Klare Bewegungsverben
-                'gehen', 'laufen', 'bewegen', 'kommen',
-                'marschieren', 'wandern', 'rennen',
-            ],
-            'take': [
-                # Aufnehmen/Greifen
-                'nehmen', 'holen', 'packen', 'greifen', 'aufheben',
-                'mitnehmen', 'aufsammeln', 'einsammeln',
-            ],
-            'drop': [
-                # Weglegen/Loslassen
-                'ablegen', 'wegwerfen',
-                'hinlegen', 'hinstellen',
-            ],
-            'use': [
-                # Benutzen/Anwenden
-                'benutzen', 'verwenden', 'anwenden', 'öffnen',
-                'einsetzen', 'nutzen', 'gebrauchen', 'bedienen',
-            ],
-            'examine': [
-                # Detailliert untersuchen
-                'untersuchen', 'betrachten', 'inspizieren',
-                'mustern', 'prüfen', 'begutachten', 'analysieren',
-            ],
-            'read': [
-                # Lesen (Text)
-                'lesen', 'durchlesen', 'vorlesen', 'studieren'
-            ],
-            'talk': [
-                # Kommunizieren
-                'sprechen', 'reden', 'unterhalten', 
-                'quatschen', 'plaudern', 'kommunizieren',
-            ],
-            'look': [
-                # Schnell schauen/umsehen
-                'schauen', 'umschauen', 'umsehen', 'gucken', 'ansehen', 'anschauen',
-                'blicken', 'spähen',
-            ]
-        }
-
         # Commands embedden
         self.command_emb = {}
 
-        for command, verbs in synonyms.items():
+        for templates in COMMAND_TEMPLATES:
             # Verb finden
             ## nomen und adjektive raus
-            self.command_emb[command] = self.matching_model.encode(verbs)
+            self.command_emb[templates.command] = self.matching_model.encode(templates.verbs)
     
     def _verb_to_command(self, verb):
 
@@ -120,12 +78,8 @@ class SmartParser:
 
         for token in doc:
 
-            # Verb finden
-            ## alle nomen und adjektive entfernen
-            ## vergleichen
-
             # Hauptverb finden
-            if token.dep_ == "ROOT":
+            if token.dep_ == "ROOT" and token.pos_ == "VERB":
                 match = self._verb_to_command(token.lemma_)
                 results['action'] = match['best_command'] if match else None
 
