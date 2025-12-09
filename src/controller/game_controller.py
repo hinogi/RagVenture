@@ -11,104 +11,77 @@ class GameController:
         self.parser = SmartParser()
         self.running = False
 
+    def _update_game_state(self):
+
+        self.view.update_panels(
+            location = self.model.current_location()[0],
+            items = self.model.location_content(),
+            exits = self.model.location_connections(),
+            inventory = self.model.player_inventory()
+        )
+
     def run_game(self):
         self.running = True
 
         self.view.show_welcome()
         input()
-        # Daten fetchen #
-        self.view.start_game(
-            location = 'Marktplatz',
-            items = 'Items: Schlüssel, goldener Esel',
-            exits = 'Exits: Taverne',
-            inventory = 'A\nB\nC'
-        )
+        self._update_game_state()
 
         self.view.refresh()
 
         while self.running:
             command = self.view.get_command()
-            self.process_command(command)
-            self.view.refresh()
+            status = self.process_command(command)
+            self._update_game_state()
+            self.view.refresh(status=status)
     
     def process_command(self, command):
+
+        if command == 'quit':
+            self.running = False
+            return "Auf Wiedersehen!"
 
         parsed = self.parser.parse(command)
 
         action = parsed[0]['action']
         targets = parsed[0]['targets']
 
-        print(parsed)
-
-        if action == 'quit':
-
-            self.running = False
-            self.view.show_message('Tschüss!')
-
-        elif action == 'look':
-
-            if not targets:
-                self.view.show_message('Was möchtest Du sehen ("show ...)"?')
-                return
-
-            target = targets[0]
-
-            if target == 'inventory':
-                result = self.model.player_inventory()
-            elif target == 'location':
-                result = self.model.current_location()
-            elif target == 'directions':
-                result = self.model.location_connections()
-            elif target == 'content':
-                result = self.model.location_content()
-            else:
-                self.view.show_message(f"Was ist {target}?")
-                return
-
-            self.view.show_list('Hier gibts: ', result)
+        # print(parsed)
         
-        elif action == 'go':
+        if action == 'go':
             if not targets:
-                result = self.model.location_connections()
-
-                self.view.show_list("Erreichbare Orte", result)
-                return
+                return "Wohin genau?"
+                
 
             else:
                 result = self.model.move_player(targets[0])
-                location = self.model.location_content()
 
                 if result:
-                    self.view.show_message(f'Du bist jetzt in {result[0]['target.name']}\n')
-                    self.view.show_message(location)
+                    return f'Du bist jetzt in {result[0]['target.name']}\n'
                 else:
-                    self.view.show_message('Ups, gestolpert.')
+                    return 'Ups, gestolpert.'
 
         elif action == 'take':
             if not targets:
                 result = self.model.location_item()
-                self.view.show_list("Objekte: ", result)
-                return
+                return"Was genau?"
 
             else:
                 result = self.model.take_item(targets[0])
                 
                 if result:
-                    self.view.show_message(f'Du trägst jetzt {result[0]['i.name']}')
-                    return
+                    return f'Du trägst jetzt {result[0]['i.name']}'
 
         elif action == 'drop':
             if not targets:
                 result = self.model.player_inventory()
-                self.view.show_list("Inventory: ", result)
-                return
+                return "Fallengelassen sag ich mal"
 
             else:
                 result = self.model.drop_item(targets[0])
                 
                 if result:
-                    self.view.show_message(f'Du hast {result[0]['i.name']} abgelegt.')
-                    return
+                    return f'Du hast {result[0]['i.name']} abgelegt.'
 
         else:
-            self.view.show_message(f"Befehlt {action} nicht erkannt. Verwende 'show ...', 'visit ...', 'quit'")
+            return f"Das konnte nicht entschlüsselt werden."

@@ -36,13 +36,37 @@ class GameView:
             padding=(2, 2)
         ))
 
-    def start_game(self, location, items, exits, inventory):
-        self.layout['location'].update(Panel(location))
-        self.layout['items'].update(Panel(items))
-        self.layout['exits'].update(Panel(exits))
-        self.layout['inventory'].update(Panel(inventory))
+    def update_panels(self, location, items, exits, inventory):
 
-    def refresh(self):
+        location_formated = f"[bold yellow]{location['location.name']}[/bold yellow]\n{location['location.description']}"
+
+        if items:
+            items_formated = '[bold yellow]Items[/bold yellow]'    
+            for item in items:
+                items_formated += f'\n{item['item.name']}. {item['item.description']}'
+        else:
+            items_formated = "Keine Gegenstände zu sehen"
+
+        if exits:
+            exits_formated = '[bold yellow]Exits[/bold yellow]'    
+            for exit in exits:
+                exits_formated += f'\n{exit['target.name']}'
+        else:
+            exits_formated = "Keine Ausgänge zu sehen"
+
+        if inventory:
+            inventory_formated = '[bold yellow]Inventar[/bold yellow]'    
+            for item in inventory:
+                inventory_formated += f'\n{item['i.name']}'
+        else:
+            inventory_formated = "Nichts dabei"
+
+        self.layout['location'].update(Panel(location_formated))
+        self.layout['items'].update(Panel(items_formated))
+        self.layout['exits'].update(Panel(exits_formated))
+        self.layout['inventory'].update(Panel(inventory_formated))
+
+    def refresh(self, status=''):
         if platform.system() == 'Windows':
             os.system('cls')
         else:
@@ -50,19 +74,8 @@ class GameView:
 
         max_height = self.console.height - 4
         self.console.print(self.layout, crop=True, height=max_height)
+        if status:
+            self.console.print(f"\n{status}\n")
 
     def get_command(self):
         return Prompt.ask('What? ')
-
-    def show_message(self, prompt):
-        self.console.print(f'Antwort: {prompt}')
-    
-    def show_list(self, title, data):
-        if not data:
-            self.console.print(f"[dim]Da ist nichts.[/dim]")
-            return
-
-        self.console.print(f'{title}')
-
-        for item in data:
-            self.console.print(item)
