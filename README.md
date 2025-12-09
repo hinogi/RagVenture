@@ -212,17 +212,19 @@ Der **Smart Parser** nutzt spaCy und Sentence Embeddings um:
 2. **Commands zu matchen** via Similarity (77%+ Accuracy)
 3. **Objekte zu finden** (aktuell: Nomen im Satz, zukünftig: DB-Matching)
 
-**Unterstützte Commands:**
-- `go` - Bewegung (80+ Verben: gehen, laufen, rennen, marschieren, ...)
-- `take` - Aufnehmen (70+ Verben: nehmen, holen, packen, greifen, ...)
-- `drop` - Ablegen (40+ Verben: ablegen, wegwerfen, hinlegen, ...)
-- `use` - Benutzen (40+ Verben: benutzen, verwenden, öffnen, ...)
-- `examine` - Untersuchen (30+ Verben: untersuchen, betrachten, ...)
-- `read` - Lesen (20+ Verben: lesen, durchlesen, studieren, ...)
-- `talk` - Sprechen (15+ Verben: sprechen, reden, plaudern, ...)
-- `look` - Umschauen (20+ Verben: schauen, umsehen, gucken, ...)
+**Aktuell implementierte Commands:**
+- `go` - Bewegung (80+ Verben: gehen, laufen, rennen, marschieren, wandern, ...)
+- `take` - Aufnehmen (70+ Verben: nehmen, holen, packen, greifen, schnappen, ...)
+- `drop` - Ablegen (40+ Verben: ablegen, wegwerfen, hinlegen, fallenlassen, ...)
 
-**Vollständige Command-Liste:** siehe `docs/commands.md`
+**Geplante Commands** (Parser vorbereitet, Game-Logik fehlt noch):
+- `use` - Benutzen (öffnen, anzünden, kombinieren)
+- `examine` - Untersuchen (detaillierte Beschreibungen)
+- `read` - Lesen (Bücher, Inschriften)
+- `talk` - Sprechen (mit NPCs)
+- `look` - Umschauen (Raum untersuchen)
+
+**Vollständige Command-Liste und Verb-Mappings:** siehe `docs/commands.md`
 
 ### 🖥️ Das Multi-Panel UI
 
