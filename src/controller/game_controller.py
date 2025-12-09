@@ -13,11 +13,23 @@ class GameController:
 
     def run_game(self):
         self.running = True
+
         self.view.show_welcome()
+        input()
+        # Daten fetchen #
+        self.view.start_game(
+            location = 'Marktplatz',
+            items = 'Items: Schlüssel, goldener Esel',
+            exits = 'Exits: Taverne',
+            inventory = 'A\nB\nC'
+        )
+
+        self.view.refresh()
 
         while self.running:
             command = self.view.get_command()
             self.process_command(command)
+            self.view.refresh()
     
     def process_command(self, command):
 

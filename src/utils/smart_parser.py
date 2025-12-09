@@ -20,8 +20,6 @@ class SmartParser:
         self.command_emb = {}
 
         for templates in COMMAND_TEMPLATES:
-            # Verb finden
-            ## nomen und adjektive raus
             self.command_emb[templates.command] = self.matching_model.encode(templates.verbs)
     
     def _verb_to_command(self, verb):
