@@ -50,53 +50,74 @@ Dieses Dokument beschreibt die Idee der Architektur des Text-Adventure-Spiels. G
 
 ## Die 3 Hauptkomponenten
 
-### 1. PARSER (`src/utils/parser.py`)
+### 1. PARSER (`src/utils/command_parser.py` / `SmartParser`)
 
-**Aufgabe**: Menschliche Sprache → Strukturierte Befehle
+**Aufgabe**: Natürliche Sprache → Strukturierte Parsing-Informationen
 
-**Beispiele:**
+**WICHTIG:** Parser hat **KEINEN DB-Zugriff**! (MVC-Prinzip)
+
+**Beispiele (Smart Parser):**
 ```python
-Input:  "nimm das goldene schwert"
-Output: ParsedCommand(verb="take", noun="goldene schwert")
+Input:  "Nimm den goldenen Schlüssel"
+Output: {
+    'command': 'take',
+    'confidence': 0.85,
+    'object_text': 'Schlüssel',
+    'adjectives': ['goldenen'],
+    'raw': 'Nimm den goldenen Schlüssel',
+    'verb_lemma': 'nehmen'
+}
 
-Input:  "n"
-Output: ParsedCommand(verb="go", noun="north")
-
-Input:  "gib schwert dem wächter"
-Output: ParsedCommand(verb="give", noun="schwert", target="wächter")
+Input:  "Geh zur Taverne"
+Output: {
+    'command': 'visit',
+    'confidence': 0.92,
+    'object_text': 'Taverne',
+    'adjectives': [],
+    'raw': 'Geh zur Taverne',
+    'verb_lemma': 'gehen'
+}
 ```
 
 **Funktionen:**
-- Tokenisierung (Text in Wörter zerlegen)
-- Synonym-Auflösung ("nimm" = "take" = "hol")
-- Füllwörter entfernen ("das", "dem", "der")
-- Validierung (ist Befehl vollständig?)
-- Error Messages generieren
+- **NLP mit SpaCy:** Verb-Extraktion, Objekt-Extraktion, Dependency Parsing
+- **Intent Mapping:** Verb → Command via Sentence Transformers (Embeddings)
+- **Synonym-Handling:** "nimm", "hol", "greif", "schnapp" → `'take'`
+- **Adjektiv-Extraktion:** "goldenen alten Schlüssel" → `['goldenen', 'alten']`
+- **Confidence-Score:** Wie sicher ist das Verb-Matching?
+- **KEIN Entity-Matching:** Objekt-Text bleibt Text (z.B. "Schlüssel"), keine DB-IDs!
 
 ---
 
 ### 2. MODEL (`src/model/game_model.py`)
 
-**Aufgabe**: Spielwelt-Zustand in Neo4j verwalten
+**Aufgabe**: Spielwelt-Zustand in Neo4j verwalten + Business Logic
+
+**Verantwortlichkeiten:**
+- ✅ **DB-Queries ausführen** (komplette Listen zurückgeben, nicht einzelne Matches)
+- ✅ **Business-Validierung** (ist Item nehmbar? ist Location erreichbar?)
+- ✅ **Aktionen ausführen** (take_item, drop_item, move_player)
+- ❌ **KEIN Entity-Matching** (gehört in Controller - siehe Smart Parser Architecture)
 
 **Kern-Funktionen:**
 
 ```python
 # Player Operations
-get_player_location() → "forest_entrance"
-move_player(direction) → True/False
+get_current_location() → {'id': 'taverne', 'name': 'Taverne', ...}
+move_player(location_id) → True/False
 get_player_inventory() → [Item, Item]
-add_to_inventory(item_id)
-remove_from_inventory(item_id)
 
-# Location Operations
-get_location_info(location_id) → Location(name, description, items, npcs)
-get_available_exits(location_id) → ["north", "east"]
+# Location Operations (liefern ALLE Entities)
+get_items_at_location(location_id=None) → [
+    {'id': 'fackel', 'name': 'Fackel', 'embedding': [...], ...},
+    {'id': 'schluessel', 'name': 'Goldener Schlüssel', 'embedding': [...], ...}
+]
+get_npcs_at_location(location_id=None) → [NPC, NPC, ...]
+get_exits(location_id=None) → [{'direction': 'north', 'target': 'cave', ...}, ...]
 
-# Item Operations
-get_item(item_id) → Item(name, description)
-pickup_item(item_id, player_id)
-drop_item(item_id, location_id)
+# Item Operations (mit DB-IDs)
+take_item(item_id) → {'name': 'Fackel', ...} oder None
+drop_item(item_id) → {'name': 'Fackel', ...} oder None
 
 # NPC Operations
 get_npc(npc_id) → NPC(name, dialogue)
@@ -105,50 +126,100 @@ talk_to_npc(npc_id) → "dialogue text"
 
 **Neo4j Queries:**
 - `MATCH (p:Player)-[:IST_IN]->(l:Location)` - Wo ist der Spieler?
-- `MATCH (l:Location)-[e:ERREICHT {direction: 'north'}]->(l2:Location)` - Wohin kann ich gehen?
-- `MATCH (i:Item)-[:LIEGT_IN]->(l:Location)` - Welche Items liegen hier?
-- `MATCH (p:Player)-[:TRÄGT]->(i:Item)` - Was habe ich im Inventar?
+- `MATCH (i:Item)-[:IST_IN]->(loc) RETURN i.id, i.name, i.name_embedding` - Alle Items am Ort (mit Embeddings!)
+- `MATCH (l:Location)-[e:ERREICHT]->(l2:Location)` - Erreichbare Locations
+- `MATCH (p:Player)-[:TRÄGT]->(i:Item)` - Inventar
+
+**Wichtig:** Model gibt **komplette Listen** zurück, Matching passiert im Controller!
 
 ---
 
 ### 3. GAME CONTROLLER (`src/controller/game_controller.py`)
 
-**Aufgabe**: Orchestriert alle Komponenten
+**Aufgabe**: Orchestriert alle Komponenten + Entity-Matching
 
-**Pseudo-Code:**
+**Verantwortlichkeiten (ERWEITERT!):**
+- ✅ **Parser → Model → View koordinieren**
+- ✅ **Entity-Matching** (Text → DB-ID via Similarity-Berechnung)
+- ✅ **Entscheidungen treffen** (Confidence zu niedrig? → Nachfragen)
+- ✅ **Ablaufsteuerung** (Was tun bei Fehler? Was bei Ambiguität?)
+- ❌ **KEINE Business-Logik** (gehört ins Model)
+
+**Merksatz:**
+> **Parser versteht Sprache. Controller orchestriert. Model verwaltet Daten und Regeln.**
+
+**Pseudo-Code (NEUE ARCHITEKTUR):**
 ```python
 def process_command(raw_input):
-    # 1. Parse User Input
-    command = parser.parse(raw_input)
+    # 1. Parser: Text → Strukturierte Info (KEIN DB-Zugriff!)
+    parsed = self.parser.parse(raw_input)
+    # → {'command': 'take', 'object_text': 'Schlüssel', 'adjectives': ['goldenen'], ...}
 
-    # 2. Validate Command
-    is_valid, error = parser.validate_command(command)
-    if not is_valid:
-        view.show_error(error)
+    # 2. Controller: Prüfe Parser-Confidence
+    if parsed['confidence'] < 0.5:
+        self.view.show_message("Ich habe dich nicht verstanden.")
         return
 
-    # 3. Execute Command via Model
-    if command.verb == "go":
-        success = model.move_player(command.noun)
-        if success:
-            new_location = model.get_current_location()
-            view.show_location(new_location)
+    # 3. Controller: Routing basierend auf Command
+    if parsed['command'] == 'take':
+        # Controller holt ALLE Items vom Model (gecacht!)
+        items = self.current_location_cache['items']
+        # oder: items = self.model.get_items_at_location()
+
+        # Controller macht Matching (Similarity-Berechnung)
+        match = self._find_best_match(
+            parsed['object_text'],
+            parsed['adjectives'],
+            candidates=items
+        )
+        # → {'item_id': 'schluessel', 'similarity': 0.89}
+
+        # 4. Controller: Entscheidung basierend auf Match-Qualität
+        if match is None:
+            self.view.show_message(f"Ich sehe hier kein {parsed['object_text']}.")
+            return
+
+        if match['similarity'] < 0.5:
+            # Zu unsicher → Nachfragen (Ja/Nein-Dialog)
+            self.view.show_message(f"Meinst du {match['name']}?")
+            # TODO: Dialog-System
+            return
+
+        # 5. Controller: Aktion ausführen via Model
+        result = self.model.take_item(match['item_id'])
+
+        # 6. Controller: View aktualisieren
+        if result:
+            self.view.show_message(f"Du nimmst {result['name']}.")
         else:
-            view.show_error("Du kannst dort nicht hingehen")
+            self.view.show_message("Das kannst du nicht nehmen.")
 
-    elif command.verb == "take":
-        success = model.pickup_item(command.noun)
-        if success:
-            view.show_message("Du nimmst das Item auf")
-        else:
-            view.show_error("Item nicht gefunden")
+    # ... weitere Commands
 
-    elif command.verb == "inventory":
-        items = model.get_player_inventory()
-        view.show_inventory(items)
+def _find_best_match(self, object_text, adjectives, candidates):
+    """
+    Entity-Matching im Controller (nicht im Model!)
+    Verwendet Sentence Transformer für Similarity
+    """
+    search_text = ' '.join(adjectives + [object_text])
+    search_embedding = self.sentence_model.encode(search_text)
 
-    # ... weitere Befehle
+    best_match = None
+    best_similarity = 0.0
+
+    for item in candidates:
+        similarity = util.cos_sim(search_embedding, item['embedding'])[0][0].item()
+        if similarity > best_similarity:
+            best_similarity = similarity
+            best_match = {'item_id': item['id'], 'name': item['name'], 'similarity': similarity}
+
+    return best_match if best_similarity > 0.3 else None
 ```
+
+**Faustregel:**
+> Alles was mit **Daten und Logik** zu tun hat → **Model**.
+> Alles was **Ablauf und UI** betrifft → **Controller**.
+> Alles was **Text-Verständnis** betrifft → **Parser**.
 
 ---
 
@@ -263,6 +334,37 @@ User sees result
 
 ---
 
+---
+
+## Wichtige Architektur-Änderungen (Dezember 2024)
+
+### Separation of Concerns: Wer macht was?
+
+**Alte Architektur (ursprüngliche Idee):**
+- Parser: String-Splitting
+- Controller: Command-Mapping + Routing
+- Model: DB + Matching
+
+**Neue Architektur (Smart Parser):**
+- **Parser:** NLP (SpaCy) + Command-Mapping (Embeddings) → **KEIN DB-Zugriff**
+- **Controller:** Orchestrierung + Entity-Matching (Similarity) + Entscheidungen
+- **Model:** DB-Operations (komplette Listen) + Business-Validierung → **KEIN Matching**
+
+**Warum?**
+- ✅ Parser isoliert testbar (ohne Neo4j)
+- ✅ Model einfacher (nur Daten, keine Matching-Logik)
+- ✅ Controller hat volle Kontrolle über Entscheidungen (Confidence-Thresholds, Dialoge)
+- ✅ Klare Verantwortlichkeiten (MVC-Pattern eingehalten)
+
+### Verwandte Dokumente
+
+- `smart_parser_architecture.md` - Details zur Smart-Parser-Implementierung (Layer 1-2)
+- `architecture_notes_dialog_caching.md` - Konzepte für Dialog-System und Caching-Strategie
+- `neo4j_cheatsheet.md` - Cypher-Query-Referenz
+- `CLAUDE.md` - Aktuelle Projekt-Instruktionen
+
+---
+
 **Status**: Living Document
-**Letzte Aktualisierung**: November 2025
-**Version**: MVP Phase 1
+**Letzte Aktualisierung**: 4. Dezember 2024
+**Version**: MVP Phase 1 + Smart Parser Architecture
