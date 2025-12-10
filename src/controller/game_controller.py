@@ -14,7 +14,7 @@ class GameController:
     def _update_game_state(self):
 
         self.view.update_panels(
-            location = self.model.current_location()[0],
+            location = self.model.current_location(),
             items = self.model.location_content(),
             exits = self.model.location_connections(),
             inventory = self.model.player_inventory()
@@ -50,7 +50,7 @@ class GameController:
         
         if action == 'go':
             if not targets:
-                return "Wohin genau?"
+                return f"Wohin genau? {parsed}"
                 
 
             else:

@@ -38,7 +38,7 @@ class GameView:
 
     def update_panels(self, location, items, exits, inventory):
 
-        location_formated = f"[bold yellow]{location['location.name']}[/bold yellow]\n{location['location.description']}"
+        location_formated = f"[bold yellow]{location[0]['location.name']}[/bold yellow]\n{location[0]['location.description']}"
 
         if items:
             items_formated = '[bold yellow]Items[/bold yellow]'    
