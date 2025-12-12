@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
+from utils.embedding_utils import model
+
 
 class GameModel:
     def __init__(self):
@@ -16,6 +18,8 @@ class GameModel:
             ),
             # notifications_min_severity='OFF'
         )
+
+        self.matching_model = model
 
     def close(self):
         self.driver.close()
@@ -50,18 +54,7 @@ class GameModel:
         WHERE item <> p
         RETURN item.id, item.name, item.description
         """
-
         return self._run_query(query)
-
-    def location_item(self):
-        query = """
-        MATCH (p:Player {id: 'player'})-[:IST_IN]->(loc:Location)
-        MATCH (item:Item)-[:IST_IN]->(loc)
-        WHERE item <> p
-        RETURN item.id, item.name, item.description
-        """
-
-        return self._run_query(query)    
 
     def location_connections(self):
         query = """
@@ -69,7 +62,6 @@ class GameModel:
         MATCH (location)-[:ERREICHT]->(target:Location)
         RETURN target.id, target.name, target.description
         """
-
         return self._run_query(query)
 
     def player_inventory(self):
@@ -77,8 +69,18 @@ class GameModel:
         MATCH (p:Player {id: 'player'})-[:TRÄGT]->(inventory:Item)
         RETURN inventory.name
         """
-
         return self._run_query(query)
+
+    def match_locations(self, noun):
+        query = """
+        CALL db.index.vector.queryNodes('location_name_index', 3, $embedding)
+        YIELD node, score
+        RETURN node.id AS location_id, node.name AS location_name, score
+        ORDER BY score DESC
+        """
+        embedding = self.matching_model.encode(noun)
+        params = {'embedding': embedding.tolist()}
+        return self._run_query(query, params=params)
 
     def move_player(self, to_location):
         query = """

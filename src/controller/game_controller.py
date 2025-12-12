@@ -1,4 +1,5 @@
 
+import logging
 from view.game_view import GameView
 from model.game_model import GameModel
 from utils.smart_parser import SmartParser
@@ -10,6 +11,12 @@ class GameController:
         self.model = GameModel()
         self.parser = SmartParser()
         self.running = False
+
+        logging.basicConfig(
+            filename='parser_debug.log',
+            level=logging.INFO,
+            format='%(asctime)s - %(message)s'
+        )
 
     def _update_game_state(self):
 
@@ -44,17 +51,22 @@ class GameController:
         parsed = self.parser.parse(command)
 
         action = parsed[0]['action']
-        targets = parsed[0]['targets']
+        target = parsed[0]['target']
 
         # print(parsed)
         
         if action == 'go':
-            if not targets:
+            if not target:
                 return f"Wohin genau? {parsed}"
                 
 
             else:
-                result = self.model.move_player(targets[0])
+
+                # Ziel finden
+                locations = self.model.match_locations(target)
+                logging.info(f"LOCATION: {locations}")
+
+                result = self.model.move_player(locations[0]['location_id'])
 
                 if result:
                     return f'Du bist jetzt in {result[0]['target.name']}\n'
@@ -62,23 +74,23 @@ class GameController:
                     return 'Ups, gestolpert.'
 
         elif action == 'take':
-            if not targets:
+            if not target:
                 result = self.model.location_item()
                 return"Was genau?"
 
             else:
-                result = self.model.take_item(targets[0])
+                result = self.model.take_item(target[0])
                 
                 if result:
                     return f'Du trägst jetzt {result[0]['i.name']}'
 
         elif action == 'drop':
-            if not targets:
+            if not target:
                 result = self.model.player_inventory()
                 return "Fallengelassen sag ich mal"
 
             else:
-                result = self.model.drop_item(targets[0])
+                result = self.model.drop_item(target[0])
                 
                 if result:
                     return f'Du hast {result[0]['i.name']} abgelegt.'

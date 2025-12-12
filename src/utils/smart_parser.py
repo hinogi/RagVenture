@@ -2,8 +2,8 @@ import spacy
 import logging
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
-from sentence_transformers import SentenceTransformer, util
 from utils.command_templates import COMMAND_TEMPLATES, CommandTemplate
+from utils.embedding_utils import model, util
 
 load_dotenv(dotenv_path='../.env')
 
@@ -13,7 +13,8 @@ class SmartParser:
 
         # Models laden
         self.parsing_model = spacy.load("de_dep_news_trf")
-        self.matching_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+        self.matching_model = model
+        self.util = util
 
         # Commands embedden
         self.command_emb = {}
@@ -47,8 +48,10 @@ class SmartParser:
 
         for command, command_emb in self.command_emb.items():
 
-            similarities = util.cos_sim(verb_emb, command_emb)
+            similarities = self.util.cos_sim(verb_emb, command_emb)
             max_sim = similarities.max().item()
+
+            logging.info(f"{max_sim}")
 
             if max_sim > result['best_sim']:
                 result = {
@@ -65,28 +68,26 @@ class SmartParser:
 
         return result
 
-
     def parse(self, input_text):
 
         if not input_text or not input_text.strip():
-            return [{'action': None, 'targets': [], 'adjects': [], 'raw': input_text}]
+            return [{'action': None, 'target': None, 'adjects': None, 'raw': input_text}]
     
-        doc = self.parsing_model(input_text)
+        input_syntax = self.parsing_model(input_text)
         
         results = {
             'action': None,
-            'targets': [],
+            'target': None,
             'raw': input_text
         }
 
         # Detailliertes Logging des Spacy Doc
         logging.info(f"=== Parsing Input: '{input_text}' ===")
-        logging.info(f"Doc tokens: {[token.text for token in doc]}")
-
-        for token in doc:
+        for token in input_syntax:
             logging.info(f"  Token: '{token.text:15}' | POS: {token.pos_:8} | DEP: {token.dep_:10} | Lemma: {token.lemma_:15} | Head: {token.head.text}")
 
-        for token in doc:
+        # Command bauen
+        for token in input_syntax:
 
             # Hauptverb finden
             if token.dep_ == "ROOT" and token.pos_ == "VERB":
@@ -95,19 +96,19 @@ class SmartParser:
                 results['action'] = match['best_command'] if match else None
 
             # Nomen/Objekte finden
-            if token.dep_ in ['NOUN', 'obj', 'dobj', 'oa', 'pobj', 'nk']:
+            if token.pos_ in ['NOUN']:
                 object_text = token.text
                 logging.info(f"  → OBJEKT gefunden: '{token.text}' (dep: {token.dep_})")
 
                 # Adjektiv finden wenn vorhanden
-                for child in token.children:
-                    if child.pos_ == 'ADJ':
-                        object_text = f"{child.text} {object_text}"
-                        logging.info(f"     + Adjektiv: '{child.text}' → '{object_text}'")
+                # for child in token.children:
+                #     if child.pos_ == 'ADJ':
+                #         object_text = f"{child.text} {object_text}"
+                #         logging.info(f"     + Adjektiv: '{child.text}' → '{object_text}'")
 
-                results['targets'].append(object_text)
+                results['target'] = object_text
 
-        logging.info(f"  → FINAL RESULT: action={results['action']}, targets={results['targets']}")
+        logging.info(f"  → FINAL RESULT: action={results['action']}, target={results['target']}")
         logging.info("")
 
         return [results]
