@@ -2,15 +2,19 @@
 
 Ein textbasiertes Adventure-Game mit Neo4j GraphDB und Rich Terminal UI.
 
-**Tech-Stack:** Python, Neo4j, Rich, (später: Ollama)
+**Das vermutlich einzige Textadventure mit 3GB Speicherbedarf und Online-Zwang.** Willkommen in der Zukunft! 🤖
+
+**Tech-Stack:** Python 3.10+, Neo4j Community Edition (Docker), Rich Terminal UI, spaCy, SentenceTransformers, (später: Ollama)
 
 ---
 
 ## 📋 Voraussetzungen
 
 - **Python 3.10+** ([Download](https://www.python.org/downloads/))
-- **Docker Desktop** ([Download](https://www.docker.com/products/docker-desktop/))
-- **Git** (optional, für Versionskontrolle)
+- **Neo4j Community Edition** - z.B. via Docker ([Anleitung unten](#2-neo4j-container-starten))
+- **~3 GB freier Speicher** (ML-Models: spaCy + SentenceTransformers)
+- **Internetverbindung**
+- **Git** (optional, nur für Entwickler)
 
 ---
 

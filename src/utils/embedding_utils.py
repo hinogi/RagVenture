@@ -1,0 +1,99 @@
+import logging
+from typing import List
+
+from sentence_transformers import SentenceTransformer, util
+from utils.command_templates import COMMAND_TEMPLATES, CommandTemplate
+
+# Singleton damit der speicher nicht so schnell ausgeht :)
+
+class EmbeddingUtils:
+    """
+    Singleton für Embedding-basiertes Matching.
+    
+    Wird automatisch als Singleton behandelt - jeder Aufruf von 
+    EmbeddingUtils() gibt die gleiche Instanz zurück.
+    """
+
+    _instance = None
+
+    def __new__(cls):
+        
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+
+            cls._instance.model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+            cls._instance.util = util
+            
+            cls._instance.command_emb = {}
+            for templates in COMMAND_TEMPLATES:
+                cls._instance.command_emb[templates.command] = cls._instance.model.encode(templates.verbs)
+        
+            logging.basicConfig(
+                filename='parser_debug.log',
+                level=logging.INFO,
+                format='%(asctime)s - %(message)s'
+            )
+
+        return cls._instance
+
+    def verb_to_command(self, verb):
+
+        result =  {}
+
+        if verb is None:
+            result = {
+                'best_command': None,
+                'best_sim': 0.0
+            }
+            return result
+
+        result = {
+            'best_command': None,
+            'best_sim': -1.0
+        }
+
+        verb_emb = self.model.encode(verb)
+
+        for command, command_emb in self.command_emb.items():
+
+            similarities = self.util.cos_sim(verb_emb, command_emb)
+            max_sim = similarities.max().item()
+
+            # logging.info(f"{similarities}")
+
+            if max_sim > result['best_sim']:
+                result = {
+                    'best_command': command,
+                    'best_sim': max_sim
+                }
+
+        # Trashhold... 
+        if result['best_sim'] < 0.90:
+            result = {
+                'best_command': None,
+                'best_sim': 0.0
+            }
+
+        return result
+    
+    def match_entities(self, query_text: str, candidates: dict):
+
+        logging.info(f"Input query: '{query_text}' | Candidates: {candidates}")
+        result = []
+
+        # Query embedden
+        query_emb = self.model.encode(query_text)
+
+        # Einzeln mit kandidaten vergleichen
+        for candidate in candidates:
+
+            score = self.util.cos_sim(query_emb, candidate['name_emb'])
+            result.append({
+                'id': candidate['id'],
+                'score': score
+            })
+
+        # Nach similarity sortieren
+        result.sort(key=lambda x: x['score'], reverse=True)
+        logging.info(f"Output: '{result}'")
+        return result

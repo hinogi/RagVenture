@@ -38,26 +38,26 @@ class GameView:
 
     def update_panels(self, location, items, exits, inventory):
 
-        location_formated = f"[bold yellow]{location[0]['location.name']}[/bold yellow]\n{location[0]['location.description']}"
+        location_formated = f"[bold yellow]{location[0]['name']}[/bold yellow]\n{location[0]['description']}"
 
         if items:
             items_formated = '[bold yellow]Items[/bold yellow]'    
             for item in items:
-                items_formated += f'\n{item['item.name']}. {item['item.description']}'
+                items_formated += f'\n{item['name']}. {item['description']}'
         else:
             items_formated = "Keine Gegenstände zu sehen"
 
         if exits:
             exits_formated = '[bold yellow]Exits[/bold yellow]'    
             for exit in exits:
-                exits_formated += f'\n{exit['target.name']}'
+                exits_formated += f'\n{exit['name']}'
         else:
             exits_formated = "Keine Ausgänge zu sehen"
 
         if inventory:
             inventory_formated = '[bold yellow]Inventar[/bold yellow]'    
             for item in inventory:
-                inventory_formated += f'\n{item['i.name']}'
+                inventory_formated += f'\n{item['name']}'
         else:
             inventory_formated = "Nichts dabei"
 
@@ -77,5 +77,5 @@ class GameView:
         if status:
             self.console.print(f"\n{status}\n")
 
-    def get_command(self):
+    def get_input(self):
         return Prompt.ask('What? ')
