@@ -38,19 +38,15 @@ class EmbeddingUtils:
 
     def verb_to_command(self, verb):
 
-        result =  {}
+        logging.info(f"=== Verb Input: '{verb}' ===")
+        result =  []
 
         if verb is None:
-            result = {
-                'best_command': None,
-                'best_sim': 0.0
-            }
-            return result
-
-        result = {
-            'best_command': None,
-            'best_sim': -1.0
-        }
+            result.append({
+                'command': None,
+                'sim': 0.0
+            })
+            return result 
 
         verb_emb = self.model.encode(verb)
 
@@ -59,26 +55,18 @@ class EmbeddingUtils:
             similarities = self.util.cos_sim(verb_emb, command_emb)
             max_sim = similarities.max().item()
 
-            # logging.info(f"{similarities}")
+            result.append({
+                'command': command,
+                'sim': max_sim
+            })
 
-            if max_sim > result['best_sim']:
-                result = {
-                    'best_command': command,
-                    'best_sim': max_sim
-                }
-
-        # Trashhold... 
-        if result['best_sim'] < 0.90:
-            result = {
-                'best_command': None,
-                'best_sim': 0.0
-            }
-
+        result.sort(key=lambda x: x['sim'], reverse=True)
+        logging.info(f"=== Verb Output: {result} ===")
         return result
     
     def match_entities(self, query_text: str, candidates: dict):
 
-        logging.info(f"Input query: '{query_text}' | Candidates: {candidates}")
+        logging.info(f"=== Noun Import: '{query_text}' | Candidates: {candidates} ===")
         result = []
 
         # Query embedden
@@ -90,10 +78,11 @@ class EmbeddingUtils:
             score = self.util.cos_sim(query_emb, candidate['name_emb'])
             result.append({
                 'id': candidate['id'],
+                'name': candidate['name'],
                 'score': score
             })
 
         # Nach similarity sortieren
         result.sort(key=lambda x: x['score'], reverse=True)
-        logging.info(f"Output: '{result}'")
+        logging.info(f"=== Noun Output: {result} ===")
         return result

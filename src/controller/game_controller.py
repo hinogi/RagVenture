@@ -33,7 +33,7 @@ class GameController:
             'inventory': self.model.player_inventory()
         }
         
-        logging.info(f"State: {self.game_state}")
+        logging.info(f"*** Game State: {self.game_state} ***")
         self.view.update_panels(**self.game_state)
 
     def run_game(self):
@@ -57,13 +57,19 @@ class GameController:
             self.game_running = False
             return "Auf Wiedersehen!"
 
+        # Parsing
         parsed = self.parser.parse(input)
-
         verb = parsed[0]['verb']
         noun = parsed[0]['noun']
 
+        # Commanding
         command = self.embedding_utils.verb_to_command(verb)
-        
+        good_verbs = [c for c in command if c['sim'] >= .95]
+        if len(good_verbs) >= 2 or len(good_verbs) == 0:
+            logging.info(f"=== Validate Verb: {good_verbs} ===")
+            # Rückfrage
+
+        # Action
         if command['best_command'] == 'go':
 
             if not noun:
@@ -74,6 +80,7 @@ class GameController:
                     noun, 
                     [x for x in self.game_state['exits']]
                 )
+
                 result = self.model.move_player(exit[0]['id'])
 
                 if result:
