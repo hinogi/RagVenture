@@ -64,7 +64,9 @@ class EmbeddingUtils:
         logging.info(f"=== Verb Output: {result} ===")
         return result
     
-    def match_entities(self, query_text: str, candidates: dict):
+    def match_entities(self, query_text: str, states: dict):
+
+        candidates = [x for x in states]
 
         logging.info(f"=== Noun Import: '{query_text}' | Candidates: {candidates} ===")
         result = []

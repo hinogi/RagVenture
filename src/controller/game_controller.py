@@ -63,14 +63,15 @@ class GameController:
         noun = parsed[0]['noun']
 
         # Commanding
-        command = self.embedding_utils.verb_to_command(verb)
-        good_verbs = [c for c in command if c['sim'] >= .95]
-        if len(good_verbs) >= 2 or len(good_verbs) == 0:
-            logging.info(f"=== Validate Verb: {good_verbs} ===")
-            # Rückfrage
+        commands = self.embedding_utils.verb_to_command(verb)
+        good_commands = [c for c in commands if c['sim'] >= .95]
+        if len(good_commands) >= 2 or len(good_commands) == 0:
+            logging.info(f"=== Validate Verb: {good_commands} ===")
+            return f"Was möchtest du tun?"
+        else:
+            best_command = good_commands[0]['command']
 
-        # Action
-        if command['best_command'] == 'go':
+        if best_command == 'go':
 
             if not noun:
                 return f"Wohin genau?"
@@ -78,7 +79,7 @@ class GameController:
                 # Ziel finden
                 exit = self.embedding_utils.match_entities(
                     noun, 
-                    [x for x in self.game_state['exits']]
+                    self.game_state['exits']
                 )
 
                 result = self.model.move_player(exit[0]['id'])
@@ -88,13 +89,13 @@ class GameController:
                 else:
                     return 'Ups, gestolpert?'
 
-        elif command['best_command'] == 'take':
+        elif best_command == 'take':
             if not noun:
                 return"Was genau?"
             else:
                 item = self.embedding_utils.match_entities(
                     noun, 
-                    [x for x in self.game_state['items']]
+                    self.game_state['items']
                 )
                 result = self.model.take_item(item[0]['id'])
 
@@ -104,13 +105,13 @@ class GameController:
                 else:
                     return 'Ups, fallengelassen?'
 
-        elif command['best_command'] == 'drop':
+        elif best_command == 'drop':
             if not noun:
                 return "Was denn?"
             else:
                 item = self.embedding_utils.match_entities(
                     noun,
-                    [x for x in self.game_state['inventory']]
+                    self.game_state['inventory']
                 )
                 result = self.model.drop_item(item[0]['id'])
                 
