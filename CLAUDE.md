@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 RagVenture is a German-language text-based adventure game using Neo4j graph database for world state, Rich library for terminal UI, and following MVC architecture. The project is in Phase 1 (MVP Foundation) with plans to integrate LLM-based narration and NPCs in later phases.
 
-**Tech Stack:** Python 3.10+, Neo4j (Docker), Rich Terminal UI, (future: Ollama for LLM integration)
+**Tech Stack:** Python 3.10+, Neo4j (Docker), Rich Terminal UI, spaCy (de_dep_news_trf), SentenceTransformers (paraphrase-multilingual-MiniLM-L12-v2), (future: Ollama for LLM integration)
 
 ## Development Commands
 
@@ -71,7 +71,8 @@ python debug_db.py
 - **Model** (`src/model/game_model.py`): Neo4j database operations, all Cypher queries
 - **View** (`src/view/game_view.py`): Rich terminal UI, display logic only
 - **Controller** (`src/controller/game_controller.py`): Game loop, command routing, orchestration
-- **Parser** (`src/utils/command_parser.py`): Simple text parser (returns `{action, targets, raw}`)
+- **Parser** (`src/utils/smart_parser.py`): NLP-based parser using spaCy for verb/noun extraction
+- **Embedding Utils** (`src/utils/embedding_utils.py`): Singleton for semantic matching (verb→command, noun→entity)
 
 ### Key Design Decisions
 
@@ -95,37 +96,73 @@ python debug_db.py
 - Use proper relationship directions: `(a)-[:REL]->(b)` matters
 - Filter by node labels in WHERE when needed: `WHERE 'Item' IN labels(entity)`
 
+**Entity Embeddings in Neo4j:**
+- Jedes Entity (Location, Item, NPC) hat eine `name_emb` Property
+- `name_emb` ist ein Float-Array (384 Dimensionen) vom SentenceTransformer
+- Wird beim Setup im Notebook generiert: `model.encode(name + " " + description)`
+- **WICHTIG:** Embeddings können NICHT in Neo4j gespeichert werden (kein Array-Type!)
+- **Workaround:** Embeddings werden im Notebook erstellt und bleiben in `game_state` (in-memory)
+- Entity-Matching passiert in Python, nicht in Cypher
+- Bei neuen Entities: Embedding in Notebook generieren und zu `name_emb` Property hinzufügen
+
 **Command Processing Flow:**
 ```
-User Input → Parser → Controller → Model → Neo4j → Model → Controller → View → Terminal
+User Input
+  → SmartParser (spaCy) → extracts verb + noun
+  → EmbeddingUtils.verb_to_command() → semantic matching (cosine similarity)
+  → Controller validates (threshold 0.95)
+  → EmbeddingUtils.match_entities() → finds target in game_state
+  → Model executes Cypher query
+  → Controller updates game_state
+  → View displays result
 ```
 
-**Parser Output Format:**
+**Parser Output Format (SmartParser.parse()):**
 ```python
-{
-    'action': str,      # First word, lowercased
-    'targets': list,    # Remaining words as list (empty if none)
-    'raw': str         # Original input
-}
+[{
+    'verb': str | None,     # Lemmatized verb (e.g., "gehen" from "gehe")
+    'noun': str | None,     # First noun found (e.g., "Taverne")
+    'adjects': None,        # Reserved for future use
+    'raw': str              # Original input
+}]
+```
+
+**Embedding Matching Output:**
+```python
+# verb_to_command() returns:
+[
+    {'command': 'go', 'sim': 0.9999},
+    {'command': 'take', 'sim': 0.8708},
+    ...
+]  # Sorted by similarity, descending
+
+# match_entities() returns:
+[
+    {'id': 'taverne', 'name': "Mo's Taverne", 'score': tensor(0.95)},
+    {'id': 'wald', 'name': 'Finsterwald', 'score': tensor(0.42)},
+    ...
+]  # Sorted by score, descending
 ```
 
 ### Current Game Commands
 
-**Aktuell implementiert:**
-- `show location/directions/inventory/content` - Informationen anzeigen
-- `visit <location>` - Bewegen
-- `take <item>` - Aufnehmen
-- `drop <item>` - Ablegen
-- `quit` - Beenden
+**Aktuell implementiert (mit Smart Parser):**
+- `go <location>` - Bewegen (versteht: gehen, laufen, rennen, besuchen, marschieren, wandern, etc.)
+- `take <item>` - Aufnehmen (versteht: nehmen, holen, packen, greifen, schnappen, etc.)
+- `drop <item>` - Ablegen (versteht: ablegen, wegwerfen, hinlegen, fallenlassen, etc.)
+- `quit` - Beenden (hardcoded, kein Parser)
 
-**Geplant (Smart Parser Integration):**
-- `go <location>` - Bewegen (natürliche Sprache)
+**Geplante Commands (Parser vorbereitet, Game-Logik fehlt):**
 - `use <item> [on <target>]` - Item benutzen/kombinieren
 - `examine <object>` - Detailliert untersuchen
 - `read <item>` - Lesbares lesen
 - `talk [to] <npc>` - Mit NPC sprechen
 - `look` - Umgebung betrachten
-- `inventory` - Inventar zeigen
+
+**Command-Validierung:**
+- Threshold für Verb-Matching: **0.95** (nur Commands mit >95% Similarity werden akzeptiert)
+- Bei mehrdeutigen Verben (>1 Match über Threshold): Rückfrage geplant (noch nicht implementiert)
+- Bei keinem Match: "Was möchtest du tun?"
 
 **Vollständige Command-Referenz:** `docs/commands.md`
 
@@ -168,6 +205,19 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - Ports: 7474 (HTTP), 7687 (Bolt)
 - Use `notifications_min_severity='OFF'` in driver config (optional, currently commented out)
 
+### Logging & Debugging
+- **Log-Datei:** `parser_debug.log` (im Projektroot, nicht committed)
+- **Log-Level:** INFO
+- **Was wird geloggt:**
+  - Parser Input/Output (Verb/Noun Extraktion)
+  - Embedding Matches mit Similarity-Scores
+  - Game State Updates
+- **Debugging-Tipps:**
+  - Bei Parser-Problemen: `tail -f parser_debug.log` während des Spielens
+  - Neo4j Browser: http://localhost:7474 für manuelle Queries
+  - `debug_db.py` für Spielzustand-Inspektion
+- **Wichtig:** `logging.basicConfig()` wird in mehreren Modulen aufgerufen (smart_parser, embedding_utils) - kann zu Konflikten führen, sollte zentralisiert werden
+
 ### Common Patterns
 
 **Adding a new Model method with Neo4j query:**
@@ -183,31 +233,56 @@ def method_name(self, param):
     return self._run_query(query, params=params)
 ```
 
-**Adding a new Controller command:**
+**Adding a new Controller command with Smart Parser:**
 ```python
-elif action == 'command':
-    if not targets:
-        # Show help/list
-        result = self.model.list_method()
-        self.view.show_list("Title", result)
-        return
+# After verb/noun validation in process_input()
+elif best_command == 'new_command':
+    if not noun:
+        return "Was genau?"
     else:
+        # Match entity from game_state
+        matches = self.embedding_utils.match_entities(
+            noun,
+            self.game_state['items']  # or 'exits', 'inventory', etc.
+        )
+
+        # Always check if matches found!
+        if not matches:
+            return f"Ich kann '{noun}' nicht finden."
+
         # Execute command
-        result = self.model.action_method(targets[0])
+        result = self.model.new_command_method(matches[0]['id'])
+
         if result:
-            self.view.show_message(f'Success message')
+            return f"Erfolgsmeldung: {result[0]['name']}"
+        else:
+            return "Fehlermeldung"
+```
+
+**EmbeddingUtils Singleton Pattern:**
+```python
+# Automatisches Singleton - jeder Aufruf gibt gleiche Instanz zurück
+embedding_utils = EmbeddingUtils()  # Lädt Model beim ersten Mal
+embedding_utils2 = EmbeddingUtils() # Gibt gleiche Instanz zurück
+
+# Wichtig: Verhindert mehrfaches Laden des 1.5GB Models!
+# Model wird nur einmal in _instance gespeichert
 ```
 
 ### Known Gotchas
 
-1. **Parser returns `targets` as list** - Use `targets[0]` when passing to Model methods expecting a string
-2. **Python dict vs set syntax** - `{'key': value}` not `{'key', value}`
-3. **Relationship directions matter** - `(a)-[:REL]->(b)` is different from `(a)<-[:REL]-(b)`
-4. **Cache issues** - Restart `python src/main.py` after code changes (Python caches modules)
-5. **Label filtering** - Use `:Item` in MATCH or `WHERE 'Item' IN labels(entity)` to filter node types
-6. **Relationship-Types typo-prone** - Nutze Schema-Konstanten aus Notebook (REL_IST_IN, REL_ÖFFNET, etc.)
-7. **IDs must be lowercase, no spaces** - Helper-Funktionen im Notebook erzwingen dies automatisch
-8. **Property-Names sind case-sensitive** - `is_locked` nicht `is_Locked` oder `isLocked`
+1. **CRITICAL: Always check list bounds** - `match_entities()` kann leere Liste zurückgeben! IMMER prüfen: `if not matches: return error`
+2. **verb_to_command() returns list** - Nicht `command['best_command']` sondern `command[0]['command']` nach Filtern
+3. **Parser returns list of dicts** - `parsed[0]['verb']` nicht `parsed['verb']`
+4. **Python dict vs set syntax** - `{'key': value}` not `{'key', value}`
+5. **Relationship directions matter** - `(a)-[:REL]->(b)` is different from `(a)<-[:REL]-(b)`
+6. **Cache issues** - Restart `python src/main.py` after code changes (Python caches modules)
+7. **Label filtering** - Use `:Item` in MATCH or `WHERE 'Item' IN labels(entity)` to filter node types
+8. **Relationship-Types typo-prone** - Nutze Schema-Konstanten aus Notebook (REL_IST_IN, REL_ÖFFNET, etc.)
+9. **IDs must be lowercase, no spaces** - Helper-Funktionen im Notebook erzwingen dies automatisch
+10. **Property-Names sind case-sensitive** - `is_locked` nicht `is_Locked` oder `isLocked`
+11. **Embedding matching ist teuer** - spaCy Model + SentenceTransformer = ~2s pro Input auf schwacher Hardware
+12. **Logging-Config** - Mehrfaches `basicConfig()` in verschiedenen Modulen kann zu Konflikten führen
 
 ## Documentation
 
@@ -216,7 +291,6 @@ elif action == 'command':
 - `docs/commands.md` - Command-System (alle Commands, Verb-Mapping, Parser-Format)
 
 **Technical Docs:**
-- `docs/smart_parser_architecture.md` - Smart Parser Design (NLP, Embeddings, Entity Resolution)
 - `docs/neo4j_cheatsheet.md` - Cypher WHERE clause reference
 - `docs/architecture_idea.md` - Original architecture vision (für Referenz)
 - `docs/neo4j_docker.md` - Docker setup details

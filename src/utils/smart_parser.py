@@ -45,14 +45,14 @@ class SmartParser:
                 verb = [token.lemma_]
         
                 for child in token.children:
-                    if child.dep_ == 'oc':
+                    if child.dep_ in ['oc', 'svp']:
                         verb.insert(0, child.lemma_)
 
             # Nomen/Objekte finden
             if token.pos_ in ['NOUN']:
                 results['noun'] = token.text
 
-        results['verb'] = ' '.join(verb)
+        results['verb'] = ' '.join(verb) or None
         
         logging.info(f"=== Parsing Output: {results} ===")
         return [results]
