@@ -23,8 +23,13 @@ class GameView:
 
         self.layout['main'].split_column(
             Layout(name='location', ratio=1),
-            Layout(name='items', ratio=4),
-            Layout(name='exits', ratio=2)
+            Layout(name='location_relateds'),
+            Layout(name='conversation'),
+        )
+
+        self.layout['location_relateds'].split_row(
+            Layout(name='items'),
+            Layout(name='exits')
         )
 
     def show_welcome(self):
@@ -78,4 +83,4 @@ class GameView:
             self.console.print(f"\n{status}\n")
 
     def get_input(self):
-        return Prompt.ask('What? ')
+        return Prompt.ask('>>> ')

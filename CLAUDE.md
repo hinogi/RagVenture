@@ -67,10 +67,11 @@ python debug_db.py
 
 ## Architecture
 
-### MVC Pattern
+### MVC Pattern (erweitert mit ConversationSystem)
 - **Model** (`src/model/game_model.py`): Neo4j database operations, all Cypher queries
 - **View** (`src/view/game_view.py`): Rich terminal UI, display logic only
-- **Controller** (`src/controller/game_controller.py`): Game loop, command routing, orchestration
+- **Controller** (`src/controller/game_controller.py`): Game loop, action execution, orchestration
+- **ConversationSystem** (`src/conversation/conversation_system.py`): **NEU** - Validierung & Rückfragen (Verb→Command, Noun→Target)
 - **Parser** (`src/utils/smart_parser.py`): NLP-based parser using spaCy for verb/noun extraction
 - **Embedding Utils** (`src/utils/embedding_utils.py`): Singleton for semantic matching (verb→command, noun→entity)
 
@@ -269,20 +270,79 @@ embedding_utils2 = EmbeddingUtils() # Gibt gleiche Instanz zurück
 # Model wird nur einmal in _instance gespeichert
 ```
 
+**Using ConversationSystem in Game Loop (NEU):**
+```python
+def run_game(self):
+    # ConversationSystem erstellen
+    conversation = ConversationSystem(
+        parser=self.parser,
+        embedding_utils=self.embedding_utils,
+        game_state_provider=lambda: self.game_state
+    )
+
+    while self.game_running:
+        # UI Update
+        self._update_game_state()
+        self.view.update_panels(**self.game_state)
+
+        # Prompt je nach State
+        prompt = "→ " if conversation.has_pending_question() else "> "
+        user_input = self.view.get_input(prompt)
+
+        if user_input == 'quit':
+            break
+
+        # Abbrechen-Check
+        if conversation.has_pending_question():
+            if user_input.lower() in ['abbrechen', 'zurück', 'cancel']:
+                conversation.reset()
+                self.view.show_message("Abgebrochen.")
+                continue
+
+        # Action bauen (mit Rückfragen)
+        result = conversation.build_action(user_input)
+
+        # Rückfrage?
+        if result.status == 'needs_clarification':
+            self.view.show_question(result.question, result.options)
+            continue
+
+        # Error?
+        if result.status == 'error':
+            self.view.show_message(result.message)
+            continue
+
+        # Action Ready → Ausführen!
+        if result.status == 'action_ready':
+            output = self._execute_action(result.action)
+            self.view.show_message(output)
+
+def _execute_action(self, action: Action):
+    """Führt validierte Action aus"""
+    if action.command == 'go':
+        result = self.model.move_player(action.targets[0]['id'])
+        return f"Du bist jetzt in {result[0]['name']}" if result else "Ups, gestolpert?"
+    # ... weitere Commands
+```
+
 ### Known Gotchas
 
 1. **CRITICAL: Always check list bounds** - `match_entities()` kann leere Liste zurückgeben! IMMER prüfen: `if not matches: return error`
 2. **verb_to_command() returns list** - Nicht `command['best_command']` sondern `command[0]['command']` nach Filtern
 3. **Parser returns list of dicts** - `parsed[0]['verb']` nicht `parsed['verb']`
-4. **Python dict vs set syntax** - `{'key': value}` not `{'key', value}`
-5. **Relationship directions matter** - `(a)-[:REL]->(b)` is different from `(a)<-[:REL]-(b)`
-6. **Cache issues** - Restart `python src/main.py` after code changes (Python caches modules)
-7. **Label filtering** - Use `:Item` in MATCH or `WHERE 'Item' IN labels(entity)` to filter node types
-8. **Relationship-Types typo-prone** - Nutze Schema-Konstanten aus Notebook (REL_IST_IN, REL_ÖFFNET, etc.)
-9. **IDs must be lowercase, no spaces** - Helper-Funktionen im Notebook erzwingen dies automatisch
-10. **Property-Names sind case-sensitive** - `is_locked` nicht `is_Locked` oder `isLocked`
-11. **Embedding matching ist teuer** - spaCy Model + SentenceTransformer = ~2s pro Input auf schwacher Hardware
-12. **Logging-Config** - Mehrfaches `basicConfig()` in verschiedenen Modulen kann zu Konflikten führen
+4. **ConversationSystem State Management** - IMMER `has_pending_question()` checken bevor neue Action gebaut wird. State muss explizit mit `reset()` zurückgesetzt werden bei Abbrechen.
+5. **Action.targets ist Liste** - Auch bei Single-Target: `action.targets[0]['id']` nicht `action.target['id']`
+6. **ConversationResult.status** - Muss IMMER gecheckt werden (needs_clarification, action_ready, error, cancelled). Nie direkt auf action zugreifen ohne Status-Check!
+7. **Prompt-Wechsel** - Bei pending_question muss Prompt zu "→ " wechseln, sonst ist für User unklar dass Rückfrage aktiv ist
+8. **Python dict vs set syntax** - `{'key': value}` not `{'key', value}`
+9. **Relationship directions matter** - `(a)-[:REL]->(b)` is different from `(a)<-[:REL]-(b)`
+10. **Cache issues** - Restart `python src/main.py` after code changes (Python caches modules)
+11. **Label filtering** - Use `:Item` in MATCH or `WHERE 'Item' IN labels(entity)` to filter node types
+12. **Relationship-Types typo-prone** - Nutze Schema-Konstanten aus Notebook (REL_IST_IN, REL_ÖFFNET, etc.)
+13. **IDs must be lowercase, no spaces** - Helper-Funktionen im Notebook erzwingen dies automatisch
+14. **Property-Names sind case-sensitive** - `is_locked` nicht `is_Locked` oder `isLocked`
+15. **Embedding matching ist teuer** - spaCy Model + SentenceTransformer = ~2s pro Input auf schwacher Hardware
+16. **Logging-Config** - Mehrfaches `basicConfig()` in verschiedenen Modulen kann zu Konflikten führen
 
 ## Documentation
 

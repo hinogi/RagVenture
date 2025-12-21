@@ -48,7 +48,9 @@ Dieses Dokument beschreibt die Idee der Architektur des Text-Adventure-Spiels. G
 
 ---
 
-## Die 3 Hauptkomponenten
+## Die 4 Hauptkomponenten
+
+**Update (Dezember 2024):** Mit Einführung des **ConversationSystem** haben wir jetzt 4 statt 3 Hauptkomponenten. Das ConversationSystem sitzt zwischen Parser und Controller und übernimmt die schrittweise Validierung von User-Eingaben mit Rückfragen.
 
 ### 1. PARSER (`src/utils/command_parser.py` / `SmartParser`)
 
@@ -134,92 +136,148 @@ talk_to_npc(npc_id) → "dialogue text"
 
 ---
 
-### 3. GAME CONTROLLER (`src/controller/game_controller.py`)
+### 3. CONVERSATIONSYSTEM (`src/conversation/conversation_system.py`) **NEU**
 
-**Aufgabe**: Orchestriert alle Komponenten + Entity-Matching
+**Aufgabe**: Validierung von User-Eingaben mit Rückfragen bei Mehrdeutigkeiten
 
-**Verantwortlichkeiten (ERWEITERT!):**
-- ✅ **Parser → Model → View koordinieren**
-- ✅ **Entity-Matching** (Text → DB-ID via Similarity-Berechnung)
-- ✅ **Entscheidungen treffen** (Confidence zu niedrig? → Nachfragen)
-- ✅ **Ablaufsteuerung** (Was tun bei Fehler? Was bei Ambiguität?)
-- ❌ **KEINE Business-Logik** (gehört ins Model)
+**Verantwortlichkeiten:**
+- ✅ **Command-Validierung** (Verb → Command mit Confidence-Checks)
+- ✅ **Target-Validierung** (Noun → Entity mit Similarity-Checks)
+- ✅ **Rückfragen stellen** (bei Mehrdeutigkeiten oder fehlenden Infos)
+- ✅ **Action-Building** (vollständig validierte Action: Command + Targets)
+- ✅ **Conversation-State** (pending_question für Multi-Turn-Dialoge)
+- ❌ **KEINE Execution** (gehört in Controller)
 
-**Merksatz:**
-> **Parser versteht Sprache. Controller orchestriert. Model verwaltet Daten und Regeln.**
+**Kern-Konzept:**
 
-**Pseudo-Code (NEUE ARCHITEKTUR):**
+ConversationSystem baut schrittweise eine **vollständig validierte Action** auf:
+1. **Phase 1:** Verb → Command (mit Rückfragen bei Mehrdeutigkeit)
+2. **Phase 2:** Noun → Target(s) (mit Rückfragen bei Mehrdeutigkeit)
+3. **Phase 3:** Action Ready → zurück an Controller
+
+**Beispiel-Flow:**
 ```python
-def process_command(raw_input):
-    # 1. Parser: Text → Strukturierte Info (KEIN DB-Zugriff!)
-    parsed = self.parser.parse(raw_input)
-    # → {'command': 'take', 'object_text': 'Schlüssel', 'adjectives': ['goldenen'], ...}
+# User: "gehe"
+result = conversation.build_action("gehe")
+# → status='needs_clarification', question='Wohin?', options=[taverne, wald]
 
-    # 2. Controller: Prüfe Parser-Confidence
-    if parsed['confidence'] < 0.5:
-        self.view.show_message("Ich habe dich nicht verstanden.")
-        return
+# User wählt: "1"
+result = conversation.build_action("1")
+# → status='action_ready', action=Action(command='go', targets=[taverne])
 
-    # 3. Controller: Routing basierend auf Command
-    if parsed['command'] == 'take':
-        # Controller holt ALLE Items vom Model (gecacht!)
-        items = self.current_location_cache['items']
-        # oder: items = self.model.get_items_at_location()
-
-        # Controller macht Matching (Similarity-Berechnung)
-        match = self._find_best_match(
-            parsed['object_text'],
-            parsed['adjectives'],
-            candidates=items
-        )
-        # → {'item_id': 'schluessel', 'similarity': 0.89}
-
-        # 4. Controller: Entscheidung basierend auf Match-Qualität
-        if match is None:
-            self.view.show_message(f"Ich sehe hier kein {parsed['object_text']}.")
-            return
-
-        if match['similarity'] < 0.5:
-            # Zu unsicher → Nachfragen (Ja/Nein-Dialog)
-            self.view.show_message(f"Meinst du {match['name']}?")
-            # TODO: Dialog-System
-            return
-
-        # 5. Controller: Aktion ausführen via Model
-        result = self.model.take_item(match['item_id'])
-
-        # 6. Controller: View aktualisieren
-        if result:
-            self.view.show_message(f"Du nimmst {result['name']}.")
-        else:
-            self.view.show_message("Das kannst du nicht nehmen.")
-
-    # ... weitere Commands
-
-def _find_best_match(self, object_text, adjectives, candidates):
-    """
-    Entity-Matching im Controller (nicht im Model!)
-    Verwendet Sentence Transformer für Similarity
-    """
-    search_text = ' '.join(adjectives + [object_text])
-    search_embedding = self.sentence_model.encode(search_text)
-
-    best_match = None
-    best_similarity = 0.0
-
-    for item in candidates:
-        similarity = util.cos_sim(search_embedding, item['embedding'])[0][0].item()
-        if similarity > best_similarity:
-            best_similarity = similarity
-            best_match = {'item_id': item['id'], 'name': item['name'], 'similarity': similarity}
-
-    return best_match if best_similarity > 0.3 else None
+# Controller führt aus:
+output = controller.execute_action(result.action)
 ```
 
-**Faustregel:**
+**Datenstrukturen:**
+```python
+@dataclass
+class Action:
+    command: str           # 'go', 'take', 'drop', etc.
+    targets: List[dict]    # [{'id': '...', 'name': '...'}]
+    verb: str             # Original (für Logging)
+    noun: str | None      # Original (für Logging)
+
+@dataclass
+class ConversationResult:
+    status: str                    # 'action_ready', 'needs_clarification', 'error'
+    action: Action | None          # Bei action_ready
+    question: str | None           # Bei needs_clarification
+    options: List[dict] | None     # Bei needs_clarification
+    message: str | None            # Bei error
+```
+
+**Validierungs-Schwellwerte:**
+```python
+COMMAND_SIMILARITY_THRESHOLD = 0.95   # Command muss sehr sicher sein
+TARGET_SIMILARITY_THRESHOLD = 0.70    # Target darf flexibler sein
+AMBIGUITY_GAP = 0.05                  # Min. Abstand für Eindeutigkeit
+```
+
+**Details:** Siehe `docs/conversation_system.md`
+
+---
+
+### 4. GAME CONTROLLER (`src/controller/game_controller.py`)
+
+**Aufgabe**: Orchestriert alle Komponenten + führt Actions aus
+
+**Verantwortlichkeiten (VEREINFACHT mit ConversationSystem!):**
+- ✅ **Game Loop** (UI Updates, Input holen, Output anzeigen)
+- ✅ **ConversationSystem → Model → View koordinieren**
+- ✅ **Action Execution** (nimmt validierte Action, führt via Model aus)
+- ✅ **Game State Management** (cached current_location, exits, items, inventory)
+- ❌ **KEINE Validierung** (macht jetzt ConversationSystem)
+- ❌ **KEINE Business-Logik** (gehört ins Model)
+
+**Merksatz (NEU):**
+> **Parser versteht Sprache. ConversationSystem validiert. Controller orchestriert. Model verwaltet Daten und Regeln.**
+
+**Pseudo-Code (NEUE ARCHITEKTUR mit ConversationSystem):**
+```python
+def run_game(self):
+    """Hauptloop mit ConversationSystem"""
+    conversation = ConversationSystem(
+        parser=self.parser,
+        embedding_utils=self.embedding_utils,
+        game_state_provider=lambda: self.game_state
+    )
+
+    while self.game_running:
+        # 1. UI Update
+        self._update_game_state()  # Lädt exits, items, inventory aus Model
+        self.view.update_panels(**self.game_state)
+
+        # 2. Input holen (Prompt je nach Conversation-State)
+        prompt = "→ " if conversation.has_pending_question() else "> "
+        user_input = self.view.get_input(prompt)
+
+        # 3. Quit-Check
+        if user_input == 'quit':
+            break
+
+        # 4. ConversationSystem baut Action (mit Rückfragen)
+        result = conversation.build_action(user_input)
+
+        # 5. Rückfrage?
+        if result.status == 'needs_clarification':
+            self.view.show_question(result.question, result.options)
+            continue  # Nächste Iteration holt Antwort
+
+        # 6. Error?
+        if result.status == 'error':
+            self.view.show_message(result.message)
+            continue
+
+        # 7. Action Ready → Ausführen!
+        if result.status == 'action_ready':
+            output = self._execute_action(result.action)
+            self.view.show_message(output)
+
+def _execute_action(self, action: Action):
+    """Führt validierte Action aus"""
+    if action.command == 'go':
+        result = self.model.move_player(action.targets[0]['id'])
+        if result:
+            return f"Du bist jetzt in {result[0]['name']}"
+        else:
+            return "Du kannst da nicht hin."
+
+    elif action.command == 'take':
+        result = self.model.take_item(action.targets[0]['id'])
+        if result:
+            return f"Du trägst jetzt {result[0]['name']}"
+        else:
+            return "Das kannst du nicht nehmen."
+
+    # ... weitere Commands
+```
+
+**Faustregel (ERWEITERT):**
 > Alles was mit **Daten und Logik** zu tun hat → **Model**.
 > Alles was **Ablauf und UI** betrifft → **Controller**.
 > Alles was **Text-Verständnis** betrifft → **Parser**.
+> Alles was **Validierung und Rückfragen** betrifft → **ConversationSystem**.
 
 ---
 
@@ -305,14 +363,23 @@ def _find_best_match(self, object_text, adjectives, candidates):
 
 ---
 
-## Datenfluss-Diagramm
+## Datenfluss-Diagramm (mit ConversationSystem)
 
 ```
 User Input
     ↓
-[Parser] → ParsedCommand
+[Parser] → verb, noun, raw
     ↓
-[Controller] → validates & routes
+[ConversationSystem] → validates step-by-step
+    ├─ Phase 1: Verb → Command
+    │  └─ Mehrdeutig? → Rückfrage → User antwortet → Loop
+    │
+    ├─ Phase 2: Noun → Target(s)
+    │  └─ Mehrdeutig? → Rückfrage → User antwortet → Loop
+    │
+    └─ Phase 3: Action Ready
+        ↓
+[Controller] → execute_action(action)
     ↓
 [Model] ← → [Neo4j Database]
     ↓
@@ -322,6 +389,8 @@ User Input
     ↓
 User sees result
 ```
+
+**Wichtig:** Rückfragen-Loop kann mehrere Iterationen brauchen, bis Action vollständig ist.
 
 ---
 
@@ -358,13 +427,14 @@ User sees result
 
 ### Verwandte Dokumente
 
-- `smart_parser_architecture.md` - Details zur Smart-Parser-Implementierung (Layer 1-2)
-- `architecture_notes_dialog_caching.md` - Konzepte für Dialog-System und Caching-Strategie
+- `conversation_system.md` - **NEU** - Detaillierte ConversationSystem-Architektur (Validierung, Rückfragen, Action-Building)
+- `commands.md` - Command-Referenz mit Disambiguation-Patterns
+- `world_schema.md` - Neo4j Graph-Schema
 - `neo4j_cheatsheet.md` - Cypher-Query-Referenz
 - `CLAUDE.md` - Aktuelle Projekt-Instruktionen
 
 ---
 
 **Status**: Living Document
-**Letzte Aktualisierung**: 4. Dezember 2024
-**Version**: MVP Phase 1 + Smart Parser Architecture
+**Letzte Aktualisierung**: 18. Dezember 2024
+**Version**: MVP Phase 1 + Smart Parser + ConversationSystem

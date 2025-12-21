@@ -4,6 +4,7 @@ from view.game_view import GameView
 from model.game_model import GameModel
 from utils.smart_parser import SmartParser
 from utils.embedding_utils import EmbeddingUtils
+from utils.conversation_system import ConversationSystem
 
 class GameController:
 
@@ -12,7 +13,7 @@ class GameController:
         self.view = GameView()
         self.model = GameModel()
         self.parser = SmartParser()
-        
+        self.conversation = ConversationSystem()        
         self.embedding_utils = EmbeddingUtils()
         
         self.game_state = {}
@@ -46,21 +47,30 @@ class GameController:
         self.view.refresh()
 
         while self.game_running:
+
             user_input = self.view.get_input()
+
+            if input == 'quit':
+                self.game_running = False
+                return "Auf Wiedersehen!"
+
+            if self.conversation.has_pending_question():
+                continue
+
+            # Parsing
+            parsed = self.parser.parse(input)
+            verb = parsed[0]['verb']
+            noun = parsed[0]['noun']
+
             status = self.process_input(user_input)
             self._update_game_state()
             self.view.refresh(status=status)
     
     def process_input(self, input):
 
-        if input == 'quit':
-            self.game_running = False
-            return "Auf Wiedersehen!"
 
-        # Parsing
-        parsed = self.parser.parse(input)
-        verb = parsed[0]['verb']
-        noun = parsed[0]['noun']
+
+
 
         # Commanding
         commands = self.embedding_utils.verb_to_command(verb)
