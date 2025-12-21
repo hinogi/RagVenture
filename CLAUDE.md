@@ -70,10 +70,12 @@ python debug_db.py
 ### MVC Pattern (erweitert mit ConversationSystem)
 - **Model** (`src/model/game_model.py`): Neo4j database operations, all Cypher queries
 - **View** (`src/view/game_view.py`): Rich terminal UI, display logic only
-- **Controller** (`src/controller/game_controller.py`): Game loop, action execution, orchestration
-- **ConversationSystem** (`src/conversation/conversation_system.py`): **NEU** - Validierung & Rückfragen (Verb→Command, Noun→Target)
+- **Controller** (`src/controller/game_controller.py`): Game loop, orchestration, action execution
+- **ConversationSystem** (`src/utils/conversation_system.py`): Validierung & State (pending_question)
 - **Parser** (`src/utils/smart_parser.py`): NLP-based parser using spaCy for verb/noun extraction
 - **Embedding Utils** (`src/utils/embedding_utils.py`): Singleton for semantic matching (verb→command, noun→entity)
+
+**Architektur-Prinzip:** Controller orchestriert - ruft Parser, EmbeddingUtils, ConversationSystem auf. ConversationSystem bekommt fertige Daten und macht nur Validierung.
 
 ### Key Design Decisions
 
@@ -270,52 +272,50 @@ embedding_utils2 = EmbeddingUtils() # Gibt gleiche Instanz zurück
 # Model wird nur einmal in _instance gespeichert
 ```
 
-**Using ConversationSystem in Game Loop (NEU):**
+**Using ConversationSystem in Game Loop (Controller orchestriert):**
 ```python
 def run_game(self):
-    # ConversationSystem erstellen
-    conversation = ConversationSystem(
-        parser=self.parser,
-        embedding_utils=self.embedding_utils,
-        game_state_provider=lambda: self.game_state
-    )
-
     while self.game_running:
-        # UI Update
-        self._update_game_state()
-        self.view.update_panels(**self.game_state)
-
-        # Prompt je nach State
-        prompt = "→ " if conversation.has_pending_question() else "> "
+        prompt = "→ " if self.conversation.has_pending_question() else "> "
         user_input = self.view.get_input(prompt)
 
         if user_input == 'quit':
             break
 
-        # Abbrechen-Check
-        if conversation.has_pending_question():
-            if user_input.lower() in ['abbrechen', 'zurück', 'cancel']:
-                conversation.reset()
-                self.view.show_message("Abgebrochen.")
-                continue
-
-        # Action bauen (mit Rückfragen)
-        result = conversation.build_action(user_input)
-
-        # Rückfrage?
-        if result.status == 'needs_clarification':
-            self.view.show_question(result.question, result.options)
+        # Pending Question? → Auflösen
+        if self.conversation.has_pending_question():
+            result = self.conversation.resolve_choice(user_input)
+            # ... handle result
             continue
 
-        # Error?
-        if result.status == 'error':
-            self.view.show_message(result.message)
+        # === CONTROLLER ORCHESTRIERT ===
+
+        # 1. Parser aufrufen
+        parsed = self.parser.parse(user_input)
+        verb, noun = parsed[0]['verb'], parsed[0]['noun']
+
+        # 2. Command-Matching (Controller ruft EmbeddingUtils)
+        command_matches = self.embedding_utils.verb_to_command(verb)
+
+        # 3. Command validieren (ConversationSystem bekommt fertige Daten)
+        result = self.conversation.validate_command(verb, command_matches)
+        if result.status != 'command_ready':
+            # needs_clarification oder error
             continue
 
-        # Action Ready → Ausführen!
-        if result.status == 'action_ready':
-            output = self._execute_action(result.action)
-            self.view.show_message(output)
+        command = result.command
+
+        # 4. Entity-Matching (Controller ruft EmbeddingUtils)
+        candidates = self._get_candidates(command)
+        entity_matches = self.embedding_utils.match_entities(noun, candidates)
+
+        # 5. Target validieren (ConversationSystem bekommt fertige Daten)
+        result = self.conversation.validate_target(noun, entity_matches, command)
+        if result.status != 'action_ready':
+            continue
+
+        # 6. Action ausführen
+        output = self._execute_action(result.action)
 
 def _execute_action(self, action: Action):
     """Führt validierte Action aus"""
@@ -330,10 +330,10 @@ def _execute_action(self, action: Action):
 1. **CRITICAL: Always check list bounds** - `match_entities()` kann leere Liste zurückgeben! IMMER prüfen: `if not matches: return error`
 2. **verb_to_command() returns list** - Nicht `command['best_command']` sondern `command[0]['command']` nach Filtern
 3. **Parser returns list of dicts** - `parsed[0]['verb']` nicht `parsed['verb']`
-4. **ConversationSystem State Management** - IMMER `has_pending_question()` checken bevor neue Action gebaut wird. State muss explizit mit `reset()` zurückgesetzt werden bei Abbrechen.
-5. **Action.targets ist Liste** - Auch bei Single-Target: `action.targets[0]['id']` nicht `action.target['id']`
-6. **ConversationResult.status** - Muss IMMER gecheckt werden (needs_clarification, action_ready, error, cancelled). Nie direkt auf action zugreifen ohne Status-Check!
-7. **Prompt-Wechsel** - Bei pending_question muss Prompt zu "→ " wechseln, sonst ist für User unklar dass Rückfrage aktiv ist
+4. **ConversationSystem bekommt fertige Daten** - Controller ruft Parser/EmbeddingUtils auf, gibt Ergebnisse an ConversationSystem weiter. ConversationSystem hat KEINE Abhängigkeiten!
+5. **ConversationResult.status checken** - Mögliche Werte: `command_ready`, `action_ready`, `needs_clarification`, `error`. Nie direkt auf `.action` oder `.command` zugreifen ohne Status-Check!
+6. **Action.targets ist Liste** - Auch bei Single-Target: `action.targets[0]['id']` nicht `action.target['id']`
+7. **Prompt-Wechsel** - Bei `has_pending_question()` muss Prompt zu "→ " wechseln
 8. **Python dict vs set syntax** - `{'key': value}` not `{'key', value}`
 9. **Relationship directions matter** - `(a)-[:REL]->(b)` is different from `(a)<-[:REL]-(b)`
 10. **Cache issues** - Restart `python src/main.py` after code changes (Python caches modules)
@@ -351,6 +351,7 @@ def _execute_action(self, action: Action):
 - `docs/commands.md` - Command-System (alle Commands, Verb-Mapping, Parser-Format)
 
 **Technical Docs:**
+- `docs/conversation_system.md` - ConversationSystem Architektur (Validierung, Rückfragen)
 - `docs/neo4j_cheatsheet.md` - Cypher WHERE clause reference
 - `docs/architecture_idea.md` - Original architecture vision (für Referenz)
 - `docs/neo4j_docker.md` - Docker setup details

@@ -1,29 +1,29 @@
 
 import logging
 from view.game_view import GameView
-from model.game_model import GameModel
-from utils.smart_parser import SmartParser
+from model.world_model import GameModel
+from model.game_state import GameState
+from model.conversation_state import ConversationState
+from utils.smart_parser import SmartParserUtils
 from utils.embedding_utils import EmbeddingUtils
-from utils.conversation_system import ConversationSystem
+from utils.conversation_system import ConversationUtils
 
 class GameController:
 
     def __init__(self):
         
+        # init pattern
         self.view = GameView()
         self.model = GameModel()
-        self.parser = SmartParser()
-        self.conversation = ConversationSystem()        
-        self.embedding_utils = EmbeddingUtils()
-        
-        self.game_state = {}
-        self.game_running = False
 
-        logging.basicConfig(
-            filename='parser_debug.log',
-            level=logging.INFO,
-            format='%(asctime)s - %(message)s'
-        )
+        # load utils
+        self.parser_utils = SmartParserUtils()        
+        self.embedding_utils = EmbeddingUtils()
+        self.conversation_utils = ConversationUtils()
+        
+        # init states
+        self.game_state = GameState()
+        self.converation_state = ConversationState()
 
     def _update_game_state(self):
 
@@ -36,24 +36,20 @@ class GameController:
         
         logging.info(f"*** Game State: {self.game_state} ***")
         self.view.update_panels(**self.game_state)
+    
+    def _run_game(self, state: bool):
+        self.game_state.running = state
 
     def run_game(self):
-        self.game_running = True
+        self._run_game(True)
 
+        # Intro :)
         self.view.show_welcome()
         input()
-        self._update_game_state()
-
-        self.view.refresh()
 
         while self.game_running:
 
-            user_input = self.view.get_input()
-
-            if input == 'quit':
-                self.game_running = False
-                return "Auf Wiedersehen!"
-
+            # Check conversation
             if self.conversation.has_pending_question():
                 continue
 
@@ -62,24 +58,30 @@ class GameController:
             verb = parsed[0]['verb']
             noun = parsed[0]['noun']
 
+            # Commanding
+            commands = self.embedding_utils.verb_to_command(verb)
+            good_commands = [c for c in commands if c['sim'] >= .95]
+
+            if len(good_commands) >= 2 or len(good_commands) == 0:
+                logging.info(f"=== Validate Verb: {good_commands} ===")
+                return f"Was möchtest du tun?"
+            else:
+                best_command = good_commands[0]['command']
+
+            # run command
             status = self.process_input(user_input)
             self._update_game_state()
             self.view.refresh(status=status)
+
+            # Prompt
+            user_input = self.view.get_input()
+
+            if input == 'quit':
+                self.game_running = False
+                return "Auf Wiedersehen!"
+
     
     def process_input(self, input):
-
-
-
-
-
-        # Commanding
-        commands = self.embedding_utils.verb_to_command(verb)
-        good_commands = [c for c in commands if c['sim'] >= .95]
-        if len(good_commands) >= 2 or len(good_commands) == 0:
-            logging.info(f"=== Validate Verb: {good_commands} ===")
-            return f"Was möchtest du tun?"
-        else:
-            best_command = good_commands[0]['command']
 
         if best_command == 'go':
 

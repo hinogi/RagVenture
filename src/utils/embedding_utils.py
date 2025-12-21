@@ -2,7 +2,7 @@ import logging
 from typing import List
 
 from sentence_transformers import SentenceTransformer, util
-from utils.command_templates import COMMAND_TEMPLATES, CommandTemplate
+from model.command_templates import COMMAND_TEMPLATES
 
 # Singleton damit der speicher nicht so schnell ausgeht :)
 

@@ -2,9 +2,18 @@
 
 ## Übersicht
 
-Das **ConversationSystem** ist eine neue Architektur-Komponente, die zwischen User-Input und Game-Execution sitzt. Es validiert schrittweise User-Eingaben (Verb → Command, Noun → Target) und stellt bei Mehrdeutigkeiten Rückfragen, bevor eine Action ausgeführt wird.
+Das **ConversationSystem** (`src/utils/conversation_system.py`) ist ein schlanker Helper, der nur für **Validierung und State-Management** zuständig ist. Der Controller bleibt der Orchestrator und ruft Parser/EmbeddingUtils selbst auf.
 
-**Kernprinzip:** Erst wenn eine **vollständig validierte Action** vorliegt (eindeutiges Command + eindeutige Targets), wird die Game-Logik ausgeführt.
+**Kernprinzip:** ConversationSystem bekommt **fertige Daten** (command_matches, entity_matches) vom Controller und macht nur Threshold-Checks, State-Management und Rückfrage-Formulierung.
+
+**Datei-Struktur:**
+```
+src/utils/
+├── conversation_data.py    # Dataclasses (Action, ConversationResult)
+├── conversation_system.py  # ConversationSystem Klasse
+├── smart_parser.py         # Parser (unverändert)
+└── embedding_utils.py      # Embedding-Matching (unverändert)
+```
 
 ---
 
@@ -89,58 +98,50 @@ Execution → Model → View
 └──────┬───────┘
        │
        ▼
-┌──────────────┐
-│    Parser    │ ← Unverändert
-└──────┬───────┘
+┌─────────────────────────────────────────────────────┐
+│                    Controller                        │
+│  (Orchestriert alles)                                │
+│                                                      │
+│  1. Parser aufrufen                                  │
+│     parsed = self.parser.parse(input)                │
+│     verb, noun = parsed[0]['verb'], parsed[0]['noun']│
+│                                                      │
+│  2. Command-Matching                                 │
+│     command_matches = embedding_utils.verb_to_command│
+│                                                      │
+│  3. ConversationSystem: Command validieren           │
+│     ┌─────────────────────────────────────────┐     │
+│     │  validate_command(verb, command_matches) │     │
+│     │  → Threshold-Check, Mehrdeutigkeit       │     │
+│     │  → Bei Rückfrage: pending_question setzen│     │
+│     └─────────────────────────────────────────┘     │
+│                                                      │
+│  4. Entity-Matching                                  │
+│     entity_matches = embedding_utils.match_entities  │
+│                                                      │
+│  5. ConversationSystem: Target validieren            │
+│     ┌─────────────────────────────────────────┐     │
+│     │  validate_target(noun, entity_matches)   │     │
+│     │  → Threshold-Check, Mehrdeutigkeit       │     │
+│     │  → Bei Rückfrage: pending_question setzen│     │
+│     └─────────────────────────────────────────┘     │
+│                                                      │
+│  6. Action ausführen                                 │
+│     output = self._execute_action(action)            │
+│                                                      │
+└─────────────────────────────────────────────────────┘
        │
        ▼
-┌─────────────────────────────────────────────┐
-│      ConversationSystem (NEU)               │
-│  ┌─────────────────────────────────────┐   │
-│  │  Phase 1: Validate Command          │   │
-│  │  • Verb vorhanden?                  │   │
-│  │  • Mehrdeutige Matches? → Rückfrage│   │
-│  │  • Kein Match? → Error              │   │
-│  └─────────────────────────────────────┘   │
-│           │                                 │
-│           ▼                                 │
-│  ┌─────────────────────────────────────┐   │
-│  │  Phase 2: Validate Target           │   │
-│  │  • Noun vorhanden?                  │   │
-│  │  • Mehrdeutige Entities? → Rückfrage│  │
-│  │  • Kein Match? → Error              │   │
-│  └─────────────────────────────────────┘   │
-│           │                                 │
-│           ▼                                 │
-│  ┌─────────────────────────────────────┐   │
-│  │  Phase 3: Action Ready              │   │
-│  │  → Gibt Action-Objekt zurück        │   │
-│  └─────────────────────────────────────┘   │
-│                                             │
-│  Conversation State:                        │
-│  • pending_question: {type, options}        │
-│  • partial_action: {command?, targets?}     │
-└─────────────┬───────────────────────────────┘
-              │
-              ▼
-┌─────────────────────────────────────────────┐
-│           Controller                        │
-│  • Nimmt Action entgegen                    │
-│  • Führt aus via Model                      │
-│  • Updated Game State                       │
-└─────────────┬───────────────────────────────┘
-              │
-              ▼
 ┌──────────────┐         ┌──────────────┐
 │    Model     │────────▶│    View      │
 └──────────────┘         └──────────────┘
 ```
 
 **Vorteile:**
-- ✅ **Separation of Concerns** - ConversationSystem = Validierung, Controller = Execution
-- ✅ **Wiederverwendbar** - Später für NPC-Dialoge, Quests, etc.
-- ✅ **Testbar** - Jede Phase isoliert testbar
-- ✅ **Klarer Flow** - State ist explizit (pending_question sichtbar)
+- ✅ **Controller bleibt Orchestrator** - Ruft Parser, EmbeddingUtils, ConversationSystem auf
+- ✅ **ConversationSystem ist schlank** - Nur Validierung + State, keine Abhängigkeiten
+- ✅ **Testbar** - ConversationSystem mit Mock-Daten testbar
+- ✅ **Keine Überladung** - Jede Komponente hat klare Verantwortung
 
 ---
 
@@ -411,18 +412,21 @@ ConversationResult(
 
 ---
 
-### ConversationSystem State
+### ConversationSystem (schlank)
 
 ```python
 class ConversationSystem:
-    """State für laufende Conversation"""
+    """Nur State + Validierung - KEINE Abhängigkeiten zu Parser/EmbeddingUtils"""
 
-    pending_question: dict | None = None
-    # {
-    #   'type': 'command' | 'target',
-    #   'partial_action': Action,  # Teilweise gefüllt
-    #   'options': [...]           # Zur Auswahl
-    # }
+    def __init__(self):
+        self.pending_question = None
+        # {
+        #   'type': 'command' | 'target',
+        #   'command': str,           # Bei target-Rückfrage
+        #   'verb': str,              # Original verb
+        #   'noun': str | None,       # Original noun
+        #   'options': [...]          # Zur Auswahl
+        # }
 
     def has_pending_question(self) -> bool:
         """Check ob Rückfrage aktiv"""
@@ -431,6 +435,11 @@ class ConversationSystem:
     def reset(self):
         """Setzt Conversation State zurück"""
         self.pending_question = None
+
+    # Bekommt fertige Daten vom Controller:
+    def validate_command(self, verb: str, command_matches: list) -> ConversationResult
+    def validate_target(self, noun: str, entity_matches: list, command: str) -> ConversationResult
+    def resolve_choice(self, choice: int) -> ConversationResult
 ```
 
 ---
@@ -439,56 +448,70 @@ class ConversationSystem:
 
 ### Pseudo-Code (neuer Game Loop)
 
+**Controller orchestriert - ConversationSystem nur für Validierung:**
+
 ```python
 def run_game(self):
-    conversation = ConversationSystem(
-        parser=self.parser,
-        embedding_utils=self.embedding_utils,
-        game_state_provider=lambda: self.game_state
-    )
-
     while self.game_running:
-        # UI Update
         self._update_game_state()
-        self.view.update_panels(**self.game_state)
 
-        # Input
-        prompt = "→ " if conversation.has_pending_question() else "> "
+        # Prompt wechseln bei Rückfrage
+        prompt = "→ " if self.conversation.has_pending_question() else "> "
         user_input = self.view.get_input(prompt)
 
         # Quit-Check
-        if user_input == 'quit':
+        if user_input.lower() == 'quit':
             break
 
-        # Abbrechen-Check (bei Rückfragen)
-        if conversation.has_pending_question():
+        # Abbrechen-Check
+        if self.conversation.has_pending_question():
             if user_input.lower() in ['abbrechen', 'zurück', 'cancel']:
-                conversation.reset()
-                self.view.show_message("Abgebrochen.")
+                self.conversation.reset()
+                self._update_game_state(conversation="Abgebrochen.")
                 continue
 
-        # ConversationSystem baut Action
-        result = conversation.build_action(user_input)
+        # Pending Question? → Auflösen
+        if self.conversation.has_pending_question():
+            result = self.conversation.resolve_choice(user_input)
+            # ... handle result
+            continue
 
-        # Rückfrage?
+        # === CONTROLLER ORCHESTRIERT ===
+
+        # 1. Parser aufrufen
+        parsed = self.parser.parse(user_input)
+        verb, noun = parsed[0]['verb'], parsed[0]['noun']
+
+        # 2. Command-Matching
+        command_matches = self.embedding_utils.verb_to_command(verb)
+
+        # 3. Command validieren (ConversationSystem)
+        result = self.conversation.validate_command(verb, command_matches)
         if result.status == 'needs_clarification':
-            self.view.show_question(result.question, result.options)
-            continue  # ← Nächste Iteration holt Antwort
-
-        # Error?
+            self._update_game_state(conversation=self._format_question(result))
+            continue
         if result.status == 'error':
-            self.view.show_message(result.message)
+            self._update_game_state(conversation=result.message)
             continue
 
-        # Cancelled?
-        if result.status == 'cancelled':
-            self.view.show_message(result.message)
+        command = result.command
+
+        # 4. Entity-Matching
+        candidates = self._get_candidates(command)
+        entity_matches = self.embedding_utils.match_entities(noun, candidates)
+
+        # 5. Target validieren (ConversationSystem)
+        result = self.conversation.validate_target(noun, entity_matches, command)
+        if result.status == 'needs_clarification':
+            self._update_game_state(conversation=self._format_question(result))
+            continue
+        if result.status == 'error':
+            self._update_game_state(conversation=result.message)
             continue
 
-        # Action Ready → Ausführen!
-        if result.status == 'action_ready':
-            output = self._execute_action(result.action)
-            self.view.show_message(output)
+        # 6. Action ausführen
+        output = self._execute_action(result.action)
+        self._update_game_state(conversation=output)
 ```
 
 ---
@@ -594,27 +617,26 @@ matches = [
 
 ---
 
-## Validierungs-Phasen (Details)
+## Validierungs-Methoden (Details)
 
-### Phase 1: Command-Validierung
+### validate_command()
 
-**Eingabe:** `verb` (aus Parser)
-**Ausgabe:** `command` (System-Befehl) oder Rückfrage
+**Eingabe:** `verb` (aus Parser), `command_matches` (aus EmbeddingUtils)
+**Ausgabe:** `ConversationResult` mit `command` oder Rückfrage
 
-**Logik:**
+**Wichtig:** Controller ruft `embedding_utils.verb_to_command(verb)` auf und gibt Ergebnis weiter!
+
 ```python
-def _validate_command(self, verb):
+def validate_command(self, verb: str, command_matches: list) -> ConversationResult:
     # 1. Verb vorhanden?
     if not verb:
         return ConversationResult(
-            status='needs_clarification',
-            question='Was möchtest du tun?',
-            options=None  # Freitext, User gibt neuen Command
+            status='error',
+            message='Was möchtest du tun?'
         )
 
-    # 2. Embedding-Matching
-    matches = self.embedding_utils.verb_to_command(verb)
-    good_matches = [m for m in matches if m['sim'] >= COMMAND_SIMILARITY_THRESHOLD]
+    # 2. Filtern nach Threshold
+    good_matches = [m for m in command_matches if m['sim'] >= COMMAND_THRESHOLD]
 
     # 3. Kein Match?
     if len(good_matches) == 0:
@@ -623,7 +645,7 @@ def _validate_command(self, verb):
             message=f"Ich verstehe '{verb}' nicht."
         )
 
-    # 4. Mehrdeutig? (mehrere über Threshold)
+    # 4. Mehrdeutig?
     if len(good_matches) > 1:
         self.pending_question = {
             'type': 'command',
@@ -633,88 +655,85 @@ def _validate_command(self, verb):
         return ConversationResult(
             status='needs_clarification',
             question='Was möchtest du tun?',
-            options=good_matches  # [{'command': 'go', ...}, {'command': 'use', ...}]
+            options=good_matches
         )
 
     # 5. Eindeutig!
     return ConversationResult(
-        status='ok',
+        status='command_ready',
         command=good_matches[0]['command']
     )
 ```
 
 ---
 
-### Phase 2: Target-Validierung
+### validate_target()
 
-**Eingabe:** `noun` (aus Parser), `command` (aus Phase 1)
-**Ausgabe:** `targets` (Entities) oder Rückfrage
+**Eingabe:** `noun` (aus Parser), `entity_matches` (aus EmbeddingUtils), `command`
+**Ausgabe:** `ConversationResult` mit `action` oder Rückfrage
 
-**Logik:**
+**Wichtig:** Controller ruft `embedding_utils.match_entities(noun, candidates)` auf und gibt Ergebnis weiter!
+
 ```python
-def _validate_target(self, noun, command):
-    # 1. Braucht dieser Command überhaupt ein Target?
-    if command in ['look', 'inventory', 'help', 'quit']:
-        # Kein Target nötig
-        return ConversationResult(status='ok', targets=[])
-
-    # 2. Noun vorhanden?
-    if not noun:
+def validate_target(self, noun: str, entity_matches: list, command: str) -> ConversationResult:
+    # 1. Kein Noun und keine Matches? → Rückfrage mit allen Optionen
+    if not noun and not entity_matches:
         return ConversationResult(
             status='needs_clarification',
-            question=self._get_target_question(command),  # "Wohin?" / "Was?"
-            options=self._get_candidates_for_command(command)
+            question=self._get_target_question(command),
+            options=[]  # Controller muss candidates liefern
         )
 
-    # 3. Hole relevante Entities je nach Command
-    candidates = self._get_candidates_for_command(command)
-    # z.B. 'go' → exits, 'take' → items in location, 'drop' → inventory
-
-    # 4. Embedding-Matching
-    matches = self.embedding_utils.match_entities(noun, candidates)
-
-    # 5. Kein Match?
-    if len(matches) == 0:
+    # 2. Keine Matches gefunden?
+    if not entity_matches:
         return ConversationResult(
             status='error',
             message=f"Ich kann '{noun}' nicht finden."
         )
 
-    # 6. Score zu niedrig?
-    best_score = matches[0]['score']
-    if best_score < TARGET_SIMILARITY_THRESHOLD:
+    # 3. Filtern nach Threshold
+    good_matches = [m for m in entity_matches if m['score'] >= TARGET_THRESHOLD]
+
+    # 4. Kein guter Match?
+    if len(good_matches) == 0:
         return ConversationResult(
             status='error',
             message=f"Ich bin mir nicht sicher was '{noun}' sein soll."
         )
 
-    # 7. Mehrdeutig? (mehrere über Threshold)
-    good_matches = [m for m in matches if m['score'] >= TARGET_SIMILARITY_THRESHOLD]
+    # 5. Mehrdeutig?
     if len(good_matches) > 1:
-        # Optional: Check Ambiguity Gap
-        if good_matches[1]['score'] >= (best_score - AMBIGUITY_GAP):
-            self.pending_question = {
-                'type': 'target',
-                'command': command,
-                'noun': noun,
-                'options': good_matches
-            }
-            return ConversationResult(
-                status='needs_clarification',
-                question=self._get_clarification_question(command, noun),
-                options=good_matches
-            )
+        self.pending_question = {
+            'type': 'target',
+            'command': command,
+            'noun': noun,
+            'options': good_matches
+        }
+        return ConversationResult(
+            status='needs_clarification',
+            question=self._get_clarification_question(command, noun),
+            options=good_matches
+        )
 
-    # 8. Eindeutig!
+    # 6. Eindeutig! → Action bauen
+    action = Action(
+        command=command,
+        targets=[good_matches[0]],
+        verb=self.pending_question.get('verb', '') if self.pending_question else '',
+        noun=noun
+    )
     return ConversationResult(
-        status='ok',
-        targets=[matches[0]]
+        status='action_ready',
+        action=action
     )
 ```
 
-**Helper-Methoden:**
+---
+
+### Helper im ConversationSystem
+
 ```python
-def _get_target_question(self, command):
+def _get_target_question(self, command: str) -> str:
     """Generiert Rückfrage je nach Command"""
     questions = {
         'go': 'Wohin möchtest du gehen?',
@@ -725,16 +744,30 @@ def _get_target_question(self, command):
     }
     return questions.get(command, 'Was genau?')
 
-def _get_candidates_for_command(self, command):
-    """Gibt relevante Entities für Command zurück"""
+def _get_clarification_question(self, command: str, noun: str) -> str:
+    """Generiert Rückfrage bei Mehrdeutigkeit"""
+    if command == 'take':
+        return f"Welches '{noun}' meinst du?"
+    elif command == 'go':
+        return f"Wohin genau?"
+    else:
+        return f"Was genau meinst du mit '{noun}'?"
+```
+
+---
+
+### Helper im Controller
+
+```python
+def _get_candidates(self, command: str) -> list:
+    """Gibt relevante Entities für Command zurück - IM CONTROLLER!"""
     if command == 'go':
         return self.game_state['exits']
     elif command == 'take':
-        return self.game_state['items']  # Items in Location
+        return self.game_state['items']
     elif command == 'drop':
         return self.game_state['inventory']
-    elif command in ['use', 'examine', 'read']:
-        # Alles was erreichbar ist
+    elif command in ['use', 'examine']:
         return self.game_state['items'] + self.game_state['inventory']
     else:
         return []
@@ -863,19 +896,36 @@ User wählt: Schwert
 
 ## Zusammenfassung
 
-Das **ConversationSystem** trennt sauber:
-- **Validierung** (Verb→Command, Noun→Target) von **Execution** (Model-Calls)
-- **Dialog-State** (Rückfragen) von **Game-State** (Neo4j)
-- **User-Interaktion** von **Business-Logik**
+### Architektur-Prinzip
 
-**Kernvorteile:**
-- ✅ Klare Verantwortlichkeiten
-- ✅ Einfach zu testen
-- ✅ Erweiterbar für NPC-Dialoge, Quests, etc.
-- ✅ User-freundlich durch Rückfragen statt Raten
+**Controller orchestriert - ConversationSystem validiert:**
 
-**Nächste Schritte:**
-1. Implementierung in `src/conversation/conversation_system.py`
-2. Integration in `game_controller.py`
-3. View-Erweiterung für Rückfragen
-4. Testing der Szenarien
+| Komponente | Verantwortung |
+|------------|---------------|
+| **Controller** | Ruft Parser, EmbeddingUtils auf. Orchestriert Flow. Führt Actions aus. |
+| **ConversationSystem** | Bekommt fertige Daten. Macht Threshold-Checks. Managed pending_question State. |
+| **Parser** | Extrahiert verb/noun aus Text (unverändert) |
+| **EmbeddingUtils** | Semantic Matching (unverändert) |
+
+### Dateien
+
+```
+src/utils/
+├── conversation_data.py    # Action, ConversationResult Dataclasses
+├── conversation_system.py  # ConversationSystem Klasse (schlank!)
+├── smart_parser.py         # Parser (unverändert)
+└── embedding_utils.py      # Embeddings (unverändert)
+```
+
+### Kernvorteile
+
+- ✅ **Controller bleibt Orchestrator** - keine Logik ausgelagert
+- ✅ **ConversationSystem ist schlank** - nur Validierung + State
+- ✅ **Keine zirkulären Abhängigkeiten** - ConversationSystem braucht weder Parser noch EmbeddingUtils
+- ✅ **Einfach zu testen** - Mock-Daten an ConversationSystem übergeben
+- ✅ **Erweiterbar** - Später für NPC-Dialoge, Quests, etc.
+
+---
+
+**Version:** 2.0 (Schlanke Architektur)
+**Letzte Aktualisierung:** 21. Dezember 2024

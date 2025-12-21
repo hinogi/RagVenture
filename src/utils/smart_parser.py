@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path='../.env')
 
-class SmartParser:
+class SmartParserUtils:
 
     def __init__(self):
 

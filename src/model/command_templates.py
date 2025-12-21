@@ -1,11 +1,9 @@
 from dataclasses import dataclass
-from typing import List
-
 
 @dataclass
 class CommandTemplate:
     command: str
-    verbs:  List[str]  # Liste von Verben (Infinitiv + wichtige Formen)
+    verbs:  list[str]  # Liste von Verben (Infinitiv + wichtige Formen)
     threshold: float = 0.80
 
 

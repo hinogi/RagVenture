@@ -1,4 +1,4 @@
-class ConversationSystem:
+class ConversationUtils:
     
     def __init__(self):
         self.pending_question = None
