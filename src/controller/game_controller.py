@@ -1,12 +1,9 @@
-
 import logging
 from view.game_view import GameView
 from model.world_model import GameModel
 from model.game_state import GameState
-from model.conversation_state import ConversationState
 from utils.smart_parser import SmartParserUtils
 from utils.embedding_utils import EmbeddingUtils
-from utils.conversation_system import ConversationUtils
 
 class GameController:
 
@@ -19,42 +16,25 @@ class GameController:
         # load utils
         self.parser_utils = SmartParserUtils()        
         self.embedding_utils = EmbeddingUtils()
-        self.conversation_utils = ConversationUtils()
         
         # init states
-        self.game_state = GameState()
-        self.converation_state = ConversationState()
-
-    def _update_game_state(self):
-
-        self.game_state = {
-            'location': self.model.current_location(),
-            'items': self.model.location_content(),
-            'exits': self.model.location_exits(),
-            'inventory': self.model.player_inventory()
-        }
-        
-        logging.info(f"*** Game State: {self.game_state} ***")
-        self.view.update_panels(**self.game_state)
-    
-    def _run_game(self, state: bool):
-        self.game_state.running = state
+        self.state = GameState()
 
     def run_game(self):
-        self._run_game(True)
+        self.state.set_run_state(True)
 
         # Intro :)
         self.view.show_welcome()
         input()
 
-        while self.game_running:
+        while self.state.running:
 
             # Check conversation
-            if self.conversation.has_pending_question():
-                continue
+            if self.conversation.status == 'PROMPT':
+                self.conversation.input = self.view.get_input()
 
             # Parsing
-            parsed = self.parser.parse(input)
+            parsed = self.parser_utils.parse(input)
             verb = parsed[0]['verb']
             noun = parsed[0]['noun']
 
@@ -69,16 +49,26 @@ class GameController:
                 best_command = good_commands[0]['command']
 
             # run command
-            status = self.process_input(user_input)
-            self._update_game_state()
+            status = self.process_input(self.conversation.input)
+
+            # update latest game_states
+            self.world.update_world_state(
+                location= self.model.current_location(),
+                items= self.model.location_content(),
+                exits= self.model.location_exits(),
+                inventory= self.model.player_inventory()
+            )
+
+            self.view.update_panels(**self.state)
             self.view.refresh(status=status)
 
             # Prompt
-            user_input = self.view.get_input()
 
             if input == 'quit':
                 self.game_running = False
                 return "Auf Wiedersehen!"
+
+
 
     
     def process_input(self, input):

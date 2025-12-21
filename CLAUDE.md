@@ -67,15 +67,36 @@ python debug_db.py
 
 ## Architecture
 
-### MVC Pattern (erweitert mit ConversationSystem)
-- **Model** (`src/model/game_model.py`): Neo4j database operations, all Cypher queries
-- **View** (`src/view/game_view.py`): Rich terminal UI, display logic only
-- **Controller** (`src/controller/game_controller.py`): Game loop, orchestration, action execution
-- **ConversationSystem** (`src/utils/conversation_system.py`): Validierung & State (pending_question)
-- **Parser** (`src/utils/smart_parser.py`): NLP-based parser using spaCy for verb/noun extraction
-- **Embedding Utils** (`src/utils/embedding_utils.py`): Singleton for semantic matching (verb→command, noun→entity)
+### Statechart-Ready MVC Pattern
 
-**Architektur-Prinzip:** Controller orchestriert - ruft Parser, EmbeddingUtils, ConversationSystem auf. ConversationSystem bekommt fertige Daten und macht nur Validierung.
+```
+┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+│ Controller  │ ───→ │ Repository  │ ───→ │  Database   │
+│             │      │ (WorldModel)│      │   (Neo4j)   │
+│    ↓        │      └─────────────┘      └─────────────┘
+│  State      │           │
+│ (GameState) │ ←─────────┘
+└─────────────┘
+```
+
+**Komponenten:**
+- **Repository** (`src/model/world_model.py`): Neo4j Queries, gibt Daten zurück
+- **View** (`src/view/game_view.py`): Rich terminal UI
+- **Controller** (`src/controller/game_controller.py`): Orchestriert alles
+- **State** (Dataclasses mit Methoden):
+  - `src/model/game_state.py`: `GameState` - Container für alle States
+  - `src/model/world_state.py`: `WorldState` - location, items, exits, inventory
+  - `src/model/conversation_state.py`: `ConversationState` - status, question, options
+- **Utils** (Pure Functions):
+  - `src/utils/smart_parser.py`: `SmartParserUtils`
+  - `src/utils/embedding_utils.py`: `EmbeddingUtils`
+  - `src/utils/conversation_utils.py`: `ConversationUtils`
+
+**Architektur-Prinzipien:**
+1. **Controller orchestriert** - holt Daten von Repository, speichert in State
+2. **Dataclasses mit Methoden** - kapseln ihre eigene Logik (z.B. `state.conversation.ask()`)
+3. **Utils sind pure** - Input → Output, keine Side Effects
+4. **Ein State-Container** - `GameState` enthält `WorldState` + `ConversationState` (Statechart-ready)
 
 ### Key Design Decisions
 
@@ -272,57 +293,99 @@ embedding_utils2 = EmbeddingUtils() # Gibt gleiche Instanz zurück
 # Model wird nur einmal in _instance gespeichert
 ```
 
-**Using ConversationSystem in Game Loop (Controller orchestriert):**
+**Game Loop Pattern (Controller orchestriert):**
 ```python
 def run_game(self):
-    while self.game_running:
-        prompt = "→ " if self.conversation.has_pending_question() else "> "
-        user_input = self.view.get_input(prompt)
+    self._run_game(True)  # game_state.running = True
+    self.view.show_welcome()
+
+    while self.game_state.running:
+        # 1. State aktualisieren & rendern
+        self._update_game_state()
+        self.view.refresh()
+
+        # 2. Input holen
+        user_input = self.view.get_input()
 
         if user_input == 'quit':
+            self.game_state.running = False
             break
 
-        # Pending Question? → Auflösen
-        if self.conversation.has_pending_question():
-            result = self.conversation.resolve_choice(user_input)
-            # ... handle result
-            continue
-
-        # === CONTROLLER ORCHESTRIERT ===
-
-        # 1. Parser aufrufen
-        parsed = self.parser.parse(user_input)
+        # 3. Parsing
+        parsed = self.parser_utils.parse(user_input)
         verb, noun = parsed[0]['verb'], parsed[0]['noun']
 
-        # 2. Command-Matching (Controller ruft EmbeddingUtils)
-        command_matches = self.embedding_utils.verb_to_command(verb)
+        # 4. Command-Matching
+        commands = self.embedding_utils.verb_to_command(verb)
+        good_commands = [c for c in commands if c['sim'] >= 0.95]
 
-        # 3. Command validieren (ConversationSystem bekommt fertige Daten)
-        result = self.conversation.validate_command(verb, command_matches)
-        if result.status != 'command_ready':
-            # needs_clarification oder error
-            continue
+        # 5. Command ausführen
+        # ...
+```
 
-        command = result.command
+**State Dataclasses (mit Methoden):**
+```python
+# model/game_state.py
+@dataclass
+class GameState:
+    running: bool = False
+    world: WorldState = field(default_factory=WorldState)
+    conversation: ConversationState = field(default_factory=ConversationState)
 
-        # 4. Entity-Matching (Controller ruft EmbeddingUtils)
-        candidates = self._get_candidates(command)
-        entity_matches = self.embedding_utils.match_entities(noun, candidates)
+    def start(self):
+        self.running = True
 
-        # 5. Target validieren (ConversationSystem bekommt fertige Daten)
-        result = self.conversation.validate_target(noun, entity_matches, command)
-        if result.status != 'action_ready':
-            continue
+    def stop(self):
+        self.running = False
 
-        # 6. Action ausführen
-        output = self._execute_action(result.action)
+# model/world_state.py
+@dataclass
+class WorldState:
+    location: dict | None = None
+    items: list = field(default_factory=list)
+    exits: list = field(default_factory=list)
+    inventory: list = field(default_factory=list)
 
-def _execute_action(self, action: Action):
-    """Führt validierte Action aus"""
-    if action.command == 'go':
-        result = self.model.move_player(action.targets[0]['id'])
-        return f"Du bist jetzt in {result[0]['name']}" if result else "Ups, gestolpert?"
-    # ... weitere Commands
+    def update(self, location, items, exits, inventory):
+        self.location = location
+        self.items = items
+        self.exits = exits
+        self.inventory = inventory
+
+# model/conversation_state.py
+class Status(Enum):
+    PROMPT = 'wait_for_prompt'
+    REQUEST = 'wait_for_choice'
+
+@dataclass
+class ConversationState:
+    status: Status = Status.PROMPT
+    question: str | None = None
+    options: list = field(default_factory=list)
+    message: str | None = None
+
+    def ask(self, question: str, options: list):
+        self.status = Status.REQUEST
+        self.question = question
+        self.options = options
+
+    def reset(self):
+        self.status = Status.PROMPT
+        self.question = None
+        self.options = []
+
+    def is_waiting(self) -> bool:
+        return self.status == Status.REQUEST
+```
+
+**Zugriff im Controller:**
+```python
+self.state = GameState()
+self.state.start()
+self.state.world.update(loc, items, exits, inv)
+self.state.conversation.ask("Wohin?", options)
+if self.state.conversation.is_waiting():
+    ...
 ```
 
 ### Known Gotchas
@@ -330,10 +393,10 @@ def _execute_action(self, action: Action):
 1. **CRITICAL: Always check list bounds** - `match_entities()` kann leere Liste zurückgeben! IMMER prüfen: `if not matches: return error`
 2. **verb_to_command() returns list** - Nicht `command['best_command']` sondern `command[0]['command']` nach Filtern
 3. **Parser returns list of dicts** - `parsed[0]['verb']` nicht `parsed['verb']`
-4. **ConversationSystem bekommt fertige Daten** - Controller ruft Parser/EmbeddingUtils auf, gibt Ergebnisse an ConversationSystem weiter. ConversationSystem hat KEINE Abhängigkeiten!
-5. **ConversationResult.status checken** - Mögliche Werte: `command_ready`, `action_ready`, `needs_clarification`, `error`. Nie direkt auf `.action` oder `.command` zugreifen ohne Status-Check!
-6. **Action.targets ist Liste** - Auch bei Single-Target: `action.targets[0]['id']` nicht `action.target['id']`
-7. **Prompt-Wechsel** - Bei `has_pending_question()` muss Prompt zu "→ " wechseln
+4. **GameState ist Dataclass** - Zugriff via `self.game_state.running`, nicht `self.game_state['running']`
+5. **ConversationState.status ist Enum** - Vergleiche mit `Status.PROMPT`, `Status.REQUEST`
+6. **Utils haben _utils Suffix** - `parser_utils`, `embedding_utils`, `conversation_utils`
+7. **Prompt-Wechsel bei Rückfragen** - Bei `conversation_utils.has_pending_question()` Prompt ändern
 8. **Python dict vs set syntax** - `{'key': value}` not `{'key', value}`
 9. **Relationship directions matter** - `(a)-[:REL]->(b)` is different from `(a)<-[:REL]-(b)`
 10. **Cache issues** - Restart `python src/main.py` after code changes (Python caches modules)

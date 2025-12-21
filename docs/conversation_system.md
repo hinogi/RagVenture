@@ -2,17 +2,18 @@
 
 ## Übersicht
 
-Das **ConversationSystem** (`src/utils/conversation_system.py`) ist ein schlanker Helper, der nur für **Validierung und State-Management** zuständig ist. Der Controller bleibt der Orchestrator und ruft Parser/EmbeddingUtils selbst auf.
-
-**Kernprinzip:** ConversationSystem bekommt **fertige Daten** (command_matches, entity_matches) vom Controller und macht nur Threshold-Checks, State-Management und Rückfrage-Formulierung.
+**Statechart-Ready Architektur:** Ein GameState Container mit parallelen Regionen (WorldState + ConversationState). Dataclasses mit Methoden für gekapselte Logik. Controller orchestriert und ruft Parser/EmbeddingUtils selbst auf.
 
 **Datei-Struktur:**
 ```
+src/model/
+├── game_state.py           # GameState Container (mit WorldState, ConversationState, Status Enum)
+├── world_model.py          # Neo4j Repository
+
 src/utils/
-├── conversation_data.py    # Dataclasses (Action, ConversationResult)
-├── conversation_system.py  # ConversationSystem Klasse
-├── smart_parser.py         # Parser (unverändert)
-└── embedding_utils.py      # Embedding-Matching (unverändert)
+├── conversation_system.py  # ConversationUtils (minimal - nur has_pending_question)
+├── smart_parser.py         # SmartParserUtils
+└── embedding_utils.py      # EmbeddingUtils
 ```
 
 ---
@@ -896,36 +897,142 @@ User wählt: Schwert
 
 ## Zusammenfassung
 
-### Architektur-Prinzip
+### Architektur-Prinzip: Statechart-Ready
 
-**Controller orchestriert - ConversationSystem validiert:**
+**Ein GameState Container mit parallelen Regionen (WorldState + ConversationState):**
+
+```
+┌─────────────────────────────────────────────────┐
+│                   GameState                      │
+│  running: bool                                   │
+│  ┌──────────────────┐  ┌─────────────────────┐  │
+│  │   WorldState     │  │ ConversationState   │  │
+│  │  ─────────────   │  │  ────────────────   │  │
+│  │  location        │  │  status: Enum       │  │
+│  │  items           │  │  question           │  │
+│  │  exits           │  │  options            │  │
+│  │  inventory       │  │  message            │  │
+│  │                  │  │                     │  │
+│  │  update(...)     │  │  ask(question, opt) │  │
+│  └──────────────────┘  │  reset()            │  │
+│                        │  is_waiting()       │  │
+│  start()               └─────────────────────┘  │
+│  stop()                                          │
+└─────────────────────────────────────────────────┘
+```
+
+**Parallele Regionen:** WorldState und ConversationState laufen unabhängig, werden aber zusammen verwaltet.
 
 | Komponente | Verantwortung |
 |------------|---------------|
-| **Controller** | Ruft Parser, EmbeddingUtils auf. Orchestriert Flow. Führt Actions aus. |
-| **ConversationSystem** | Bekommt fertige Daten. Macht Threshold-Checks. Managed pending_question State. |
-| **Parser** | Extrahiert verb/noun aus Text (unverändert) |
-| **EmbeddingUtils** | Semantic Matching (unverändert) |
+| **Controller** | Orchestriert Flow. Ruft Parser, EmbeddingUtils auf. Manipuliert State. Führt Actions aus. |
+| **GameState** | Container-Dataclass mit `running`, `world`, `conversation` |
+| **WorldState** | Dataclass: location, items, exits, inventory + `update()` Methode |
+| **ConversationState** | Dataclass: status (Enum), question, options, message + `ask()`, `reset()`, `is_waiting()` Methoden |
+| **WorldModel** | Neo4j Repository für Datenbank-Queries |
+| **SmartParserUtils** | Extrahiert verb/noun aus Text (pure function) |
+| **EmbeddingUtils** | Semantic Matching (pure function) |
+| **ConversationUtils** | Nur `has_pending_question()` Helper |
+
+### Dataclasses mit Methoden
+
+```python
+@dataclass
+class GameState:
+    running: bool = False
+    world: WorldState = field(default_factory=WorldState)
+    conversation: ConversationState = field(default_factory=ConversationState)
+
+    def start(self): self.running = True
+    def stop(self): self.running = False
+
+@dataclass
+class WorldState:
+    location: dict | None = None
+    items: list = field(default_factory=list)
+    exits: list = field(default_factory=list)
+    inventory: list = field(default_factory=list)
+
+    def update(self, location, items, exits, inventory):
+        self.location = location
+        self.items = items
+        self.exits = exits
+        self.inventory = inventory
+
+@dataclass
+class ConversationState:
+    status: Status = Status.PROMPT
+    question: str | None = None
+    options: list = field(default_factory=list)
+    message: str | None = None
+
+    def ask(self, question: str, options: list):
+        self.status = Status.REQUEST
+        self.question = question
+        self.options = options
+
+    def reset(self):
+        self.status = Status.PROMPT
+        self.question = None
+        self.options = []
+
+    def is_waiting(self) -> bool:
+        return self.status == Status.REQUEST
+```
+
+### Zugriff im Controller
+
+```python
+# Ein Container für alles
+self.state = GameState()
+
+# Lifecycle
+self.state.start()
+self.state.stop()
+
+# World aktualisieren
+self.state.world.update(
+    location=self.model.current_location(),
+    items=self.model.location_content(),
+    exits=self.model.location_exits(),
+    inventory=self.model.player_inventory()
+)
+
+# Rückfrage stellen
+self.state.conversation.ask("Wohin?", exits)
+
+# Check ob Rückfrage aktiv
+if self.state.conversation.is_waiting():
+    prompt = "→ "
+
+# Rückfrage zurücksetzen
+self.state.conversation.reset()
+```
 
 ### Dateien
 
 ```
+src/model/
+├── game_state.py           # GameState Container (mit WorldState, ConversationState)
+├── world_model.py          # Neo4j Repository
+
 src/utils/
-├── conversation_data.py    # Action, ConversationResult Dataclasses
-├── conversation_system.py  # ConversationSystem Klasse (schlank!)
-├── smart_parser.py         # Parser (unverändert)
-└── embedding_utils.py      # Embeddings (unverändert)
+├── conversation_system.py  # ConversationUtils (minimal)
+├── smart_parser.py         # SmartParserUtils
+└── embedding_utils.py      # EmbeddingUtils
 ```
 
 ### Kernvorteile
 
-- ✅ **Controller bleibt Orchestrator** - keine Logik ausgelagert
-- ✅ **ConversationSystem ist schlank** - nur Validierung + State
-- ✅ **Keine zirkulären Abhängigkeiten** - ConversationSystem braucht weder Parser noch EmbeddingUtils
-- ✅ **Einfach zu testen** - Mock-Daten an ConversationSystem übergeben
-- ✅ **Erweiterbar** - Später für NPC-Dialoge, Quests, etc.
+- ✅ **Statechart-Ready** - Parallele Regionen vorbereitet
+- ✅ **Dataclasses mit Methoden** - Logik gekapselt, nicht im Controller
+- ✅ **field(default_factory=...)** - Korrekte mutable Defaults
+- ✅ **Controller orchestriert** - Keine Logik in Utils ausgelagert
+- ✅ **Status als Enum** - Keine Typos bei Status-Werten
+- ✅ **Ein State-Container** - `self.state` statt viele Variablen
+- ✅ **Erweiterbar** - Später für NPC-Dialoge, Combat, Quests (neue Regionen)
 
 ---
 
-**Version:** 2.0 (Schlanke Architektur)
+**Version:** 4.0 (Statechart-Ready Architektur)
 **Letzte Aktualisierung:** 21. Dezember 2024
