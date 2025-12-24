@@ -136,63 +136,60 @@ talk_to_npc(npc_id) → "dialogue text"
 
 ---
 
-### 3. CONVERSATIONSYSTEM (`src/conversation/conversation_system.py`) **NEU**
+### 3. STATE-MANAGEMENT (Statechart-Ready Dataclasses) **NEU**
 
-**Aufgabe**: Validierung von User-Eingaben mit Rückfragen bei Mehrdeutigkeiten
+**Aufgabe**: Spielzustand und Conversation-State als Dataclasses mit Methoden
+
+**Architektur:**
+```
+┌─────────────────────────────────────────────────┐
+│                   GameState                      │
+│  running: bool                                   │
+│  ┌──────────────────┐  ┌─────────────────────┐  │
+│  │   WorldState     │  │ ConversationState   │  │
+│  │  location        │  │  status: Enum       │  │
+│  │  items, exits    │  │  question, options  │  │
+│  │  inventory       │  │                     │  │
+│  │  update(...)     │  │  ask(), reset()     │  │
+│  └──────────────────┘  │  is_waiting()       │  │
+│                        └─────────────────────┘  │
+│  start(), stop()                                 │
+└─────────────────────────────────────────────────┘
+```
+
+**Dateien:**
+- `src/model/game_state.py` - GameState Container
+- `src/model/world_state.py` - WorldState Dataclass
+- `src/model/conversation_state.py` - ConversationState + Status Enum
 
 **Verantwortlichkeiten:**
-- ✅ **Command-Validierung** (Verb → Command mit Confidence-Checks)
-- ✅ **Target-Validierung** (Noun → Entity mit Similarity-Checks)
-- ✅ **Rückfragen stellen** (bei Mehrdeutigkeiten oder fehlenden Infos)
-- ✅ **Action-Building** (vollständig validierte Action: Command + Targets)
-- ✅ **Conversation-State** (pending_question für Multi-Turn-Dialoge)
-- ❌ **KEINE Execution** (gehört in Controller)
-
-**Kern-Konzept:**
-
-ConversationSystem baut schrittweise eine **vollständig validierte Action** auf:
-1. **Phase 1:** Verb → Command (mit Rückfragen bei Mehrdeutigkeit)
-2. **Phase 2:** Noun → Target(s) (mit Rückfragen bei Mehrdeutigkeit)
-3. **Phase 3:** Action Ready → zurück an Controller
+- ✅ **State-Container** (ein `GameState` für alles)
+- ✅ **Dataclasses mit Methoden** (Logik gekapselt: `ask()`, `reset()`, `is_waiting()`)
+- ✅ **Parallele Regionen** (WorldState + ConversationState unabhängig)
+- ✅ **field(default_factory=...)** für korrekte mutable Defaults
+- ❌ **KEINE Business-Logik** (gehört in Controller/Model)
 
 **Beispiel-Flow:**
 ```python
-# User: "gehe"
-result = conversation.build_action("gehe")
-# → status='needs_clarification', question='Wohin?', options=[taverne, wald]
+# Controller initialisiert
+self.state = GameState()
+self.state.start()
 
-# User wählt: "1"
-result = conversation.build_action("1")
-# → status='action_ready', action=Action(command='go', targets=[taverne])
+# World aktualisieren
+self.state.world.update(location, items, exits, inventory)
 
-# Controller führt aus:
-output = controller.execute_action(result.action)
+# Rückfrage stellen
+self.state.conversation.ask("Wohin?", exits)
+
+# Check ob Rückfrage aktiv
+if self.state.conversation.is_waiting():
+    prompt = "→ "
+
+# Zurücksetzen
+self.state.conversation.reset()
 ```
 
-**Datenstrukturen:**
-```python
-@dataclass
-class Action:
-    command: str           # 'go', 'take', 'drop', etc.
-    targets: List[dict]    # [{'id': '...', 'name': '...'}]
-    verb: str             # Original (für Logging)
-    noun: str | None      # Original (für Logging)
-
-@dataclass
-class ConversationResult:
-    status: str                    # 'action_ready', 'needs_clarification', 'error'
-    action: Action | None          # Bei action_ready
-    question: str | None           # Bei needs_clarification
-    options: List[dict] | None     # Bei needs_clarification
-    message: str | None            # Bei error
-```
-
-**Validierungs-Schwellwerte:**
-```python
-COMMAND_SIMILARITY_THRESHOLD = 0.95   # Command muss sehr sicher sein
-TARGET_SIMILARITY_THRESHOLD = 0.70    # Target darf flexibler sein
-AMBIGUITY_GAP = 0.05                  # Min. Abstand für Eindeutigkeit
-```
+**Validierung passiert im Controller**, nicht in separater Klasse.
 
 **Details:** Siehe `docs/conversation_system.md`
 
@@ -213,46 +210,48 @@ AMBIGUITY_GAP = 0.05                  # Min. Abstand für Eindeutigkeit
 **Merksatz (NEU):**
 > **Parser versteht Sprache. ConversationSystem validiert. Controller orchestriert. Model verwaltet Daten und Regeln.**
 
-**Pseudo-Code (NEUE ARCHITEKTUR mit ConversationSystem):**
+**Pseudo-Code (NEUE ARCHITEKTUR mit Statechart-Ready State):**
 ```python
 def run_game(self):
-    """Hauptloop mit ConversationSystem"""
-    conversation = ConversationSystem(
-        parser=self.parser,
-        embedding_utils=self.embedding_utils,
-        game_state_provider=lambda: self.game_state
-    )
+    """Hauptloop mit State-Dataclasses"""
+    self.state.start()  # state.running = True
 
-    while self.game_running:
-        # 1. UI Update
-        self._update_game_state()  # Lädt exits, items, inventory aus Model
-        self.view.update_panels(**self.game_state)
+    while self.state.running:
+        # 1. World-State aktualisieren
+        self.state.world.update(
+            location=self.model.current_location(),
+            items=self.model.location_content(),
+            exits=self.model.location_exits(),
+            inventory=self.model.player_inventory()
+        )
+        self.view.update_panels(...)
 
         # 2. Input holen (Prompt je nach Conversation-State)
-        prompt = "→ " if conversation.has_pending_question() else "> "
+        prompt = "→ " if self.state.conversation.is_waiting() else "> "
         user_input = self.view.get_input(prompt)
 
         # 3. Quit-Check
         if user_input == 'quit':
+            self.state.stop()
             break
 
-        # 4. ConversationSystem baut Action (mit Rückfragen)
-        result = conversation.build_action(user_input)
-
-        # 5. Rückfrage?
-        if result.status == 'needs_clarification':
-            self.view.show_question(result.question, result.options)
-            continue  # Nächste Iteration holt Antwort
-
-        # 6. Error?
-        if result.status == 'error':
-            self.view.show_message(result.message)
+        # 4. Rückfrage aktiv? → Auflösen
+        if self.state.conversation.is_waiting():
+            # Handle choice...
             continue
 
-        # 7. Action Ready → Ausführen!
-        if result.status == 'action_ready':
-            output = self._execute_action(result.action)
-            self.view.show_message(output)
+        # 5. Parsing + Validation im Controller
+        parsed = self.parser_utils.parse(user_input)
+        # ... Command-Matching, Entity-Matching
+
+        # 6. Bei Mehrdeutigkeit → Rückfrage stellen
+        if len(good_commands) > 1:
+            self.state.conversation.ask("Was möchtest du tun?", good_commands)
+            continue
+
+        # 7. Action ausführen
+        output = self._execute_action(command, target)
+        self.view.show_message(output)
 
 def _execute_action(self, action: Action):
     """Führt validierte Action aus"""
@@ -427,14 +426,13 @@ User sees result
 
 ### Verwandte Dokumente
 
-- `conversation_system.md` - **NEU** - Detaillierte ConversationSystem-Architektur (Validierung, Rückfragen, Action-Building)
+- `conversation_system.md` - Statechart-Ready Architektur (State-Dataclasses, Validierung, Rückfragen)
 - `commands.md` - Command-Referenz mit Disambiguation-Patterns
 - `world_schema.md` - Neo4j Graph-Schema
-- `neo4j_cheatsheet.md` - Cypher-Query-Referenz
 - `CLAUDE.md` - Aktuelle Projekt-Instruktionen
 
 ---
 
 **Status**: Living Document
-**Letzte Aktualisierung**: 18. Dezember 2024
-**Version**: MVP Phase 1 + Smart Parser + ConversationSystem
+**Letzte Aktualisierung**: 21. Dezember 2024
+**Version**: MVP Phase 1 + Smart Parser + Statechart-Ready State

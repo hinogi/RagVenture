@@ -20,13 +20,16 @@ Entwickelt mit **Claude als Coding-Buddy und "Live-Forum"** - ein Experiment, wi
 
 ```
 src/
-├── controller/game_controller.py  # MVC Controller, Command-Routing
-├── model/game_model.py            # Neo4j Queries (Cypher)
+├── controller/game_controller.py  # MVC Controller, Orchestrierung
+├── model/
+│   ├── world_model.py             # Neo4j Queries (Cypher)
+│   ├── game_state.py              # GameState Container (Statechart-Ready)
+│   ├── world_state.py             # WorldState Dataclass
+│   └── conversation_state.py      # ConversationState + Status Enum
 ├── view/game_view.py              # Rich Terminal UI
 ├── utils/
 │   ├── smart_parser.py            # spaCy NLP Parser
-│   ├── embedding_utils.py         # Singleton für Embeddings
-│   └── command_templates.py       # Verb→Command Mappings
+│   └── embedding_utils.py         # Singleton für Embeddings
 └── main.py
 
 notebooks/
@@ -37,7 +40,8 @@ notebooks/
 docs/
 ├── world_schema.md                # Graph-Schema (Nodes, Relationships)
 ├── commands.md                    # Command-System, Verb-Mappings
-└── ...
+├── conversation_system.md         # Statechart-Ready Architektur
+└── architecture_idea.md           # Architektur-Vision
 ```
 
 ---
@@ -45,11 +49,11 @@ docs/
 ## 🚀 Installation
 
 ```bash
-# Neo4j Container
+# Neo4j Container starten
 docker run -d --name textadv-dev -p 7474:7474 -p 7687:7687 \
     -e NEO4J_AUTH=neo4j/password neo4j:latest
 
-# Python
+# Python Environment
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 python -m spacy download de_dep_news_trf
@@ -65,6 +69,23 @@ python src/main.py
 ```
 
 **Neo4j Browser:** http://localhost:7474 (neo4j / password)
+
+### Docker-Befehle für Neo4j
+
+```bash
+# Container-Status prüfen
+docker ps | grep neo4j
+
+# Container stoppen/starten
+docker stop textadv-dev
+docker start textadv-dev
+
+# Logs ansehen (bei Problemen)
+docker logs textadv-dev
+
+# Container komplett löschen (Daten weg!)
+docker rm textadv-dev
+```
 
 ---
 

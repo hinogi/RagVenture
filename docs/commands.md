@@ -474,7 +474,7 @@ View: "Wohin möchtest du gehen?"
   ↓
 User: "abbrechen"
   ↓
-ConversationSystem: reset()
+Controller: state.conversation.reset()
 View: "Abgebrochen."
 Prompt: "> " (zurück zu normal)
 ```
@@ -519,29 +519,27 @@ Gap = 0.02 < AMBIGUITY_GAP (0.05)
 
 ### Multi-Turn Conversations
 
-Das ConversationSystem behält State über mehrere Inputs:
+Der ConversationState (Dataclass) speichert Rückfragen:
 
 ```
 User: "nimm"
   ↓
-ConversationSystem speichert:
-  pending_question = {
-      'type': 'target',
-      'command': 'take',
-      'options': [...]
-  }
+Controller:
+  state.conversation.ask("Was möchtest du nehmen?", items)
+  # status = Status.REQUEST
   ↓
 View: "Was möchtest du nehmen?" (Rückfrage)
   ↓
 User: "2" (Antwort auf Rückfrage)
   ↓
-ConversationSystem resolved pending_question
-  → Action ready: take(options[1])
+Controller prüft: state.conversation.is_waiting() == True
+  → Wählt items[1], führt aus
+  → state.conversation.reset()
 ```
 
 **Wichtig:** Prompt ändert sich:
 - Normal: `"> "`
-- Rückfrage: `"→ "`
+- Rückfrage: `"→ "` (wenn `state.conversation.is_waiting()`)
 
 ---
 
@@ -636,6 +634,6 @@ Geplant für spätere Phasen:
 
 ---
 
-**Version:** 1.1 (mit ConversationSystem)
-**Letzte Aktualisierung:** 18. Dezember 2024
+**Version:** 1.2 (mit Statechart-Ready State)
+**Letzte Aktualisierung:** 21. Dezember 2024
 **Status:** Definition Complete ✅

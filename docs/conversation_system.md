@@ -7,11 +7,12 @@
 **Datei-Struktur:**
 ```
 src/model/
-├── game_state.py           # GameState Container (mit WorldState, ConversationState, Status Enum)
+├── game_state.py           # GameState Container
+├── world_state.py          # WorldState Dataclass mit update()
+├── conversation_state.py   # ConversationState Dataclass mit ask(), reset(), is_waiting()
 ├── world_model.py          # Neo4j Repository
 
 src/utils/
-├── conversation_system.py  # ConversationUtils (minimal - nur has_pending_question)
 ├── smart_parser.py         # SmartParserUtils
 └── embedding_utils.py      # EmbeddingUtils
 ```
@@ -413,34 +414,46 @@ ConversationResult(
 
 ---
 
-### ConversationSystem (schlank)
+### ConversationState (Dataclass mit Methoden)
 
 ```python
-class ConversationSystem:
-    """Nur State + Validierung - KEINE Abhängigkeiten zu Parser/EmbeddingUtils"""
+from enum import Enum
+from dataclasses import dataclass, field
 
-    def __init__(self):
-        self.pending_question = None
-        # {
-        #   'type': 'command' | 'target',
-        #   'command': str,           # Bei target-Rückfrage
-        #   'verb': str,              # Original verb
-        #   'noun': str | None,       # Original noun
-        #   'options': [...]          # Zur Auswahl
-        # }
+class Status(Enum):
+    PROMPT = 'wait_for_prompt'
+    REQUEST = 'wait_for_choice'
 
-    def has_pending_question(self) -> bool:
-        """Check ob Rückfrage aktiv"""
-        return self.pending_question is not None
+@dataclass
+class ConversationState:
+    """State für Rückfragen - lebt in GameState.conversation"""
+    status: Status = Status.PROMPT
+    question: str | None = None
+    options: list = field(default_factory=list)
+    message: str | None = None
+
+    def ask(self, question: str, options: list):
+        """Stellt eine Rückfrage"""
+        self.status = Status.REQUEST
+        self.question = question
+        self.options = options
 
     def reset(self):
-        """Setzt Conversation State zurück"""
-        self.pending_question = None
+        """Setzt zurück auf normalen Prompt"""
+        self.status = Status.PROMPT
+        self.question = None
+        self.options = []
 
-    # Bekommt fertige Daten vom Controller:
-    def validate_command(self, verb: str, command_matches: list) -> ConversationResult
-    def validate_target(self, noun: str, entity_matches: list, command: str) -> ConversationResult
-    def resolve_choice(self, choice: int) -> ConversationResult
+    def is_waiting(self) -> bool:
+        """Check ob Rückfrage aktiv"""
+        return self.status == Status.REQUEST
+```
+
+**Zugriff im Controller:**
+```python
+self.state.conversation.ask("Wohin?", exits)
+self.state.conversation.is_waiting()  # True
+self.state.conversation.reset()
 ```
 
 ---
@@ -453,66 +466,65 @@ class ConversationSystem:
 
 ```python
 def run_game(self):
-    while self.game_running:
+    self.state.start()  # state.running = True
+
+    while self.state.running:
         self._update_game_state()
 
         # Prompt wechseln bei Rückfrage
-        prompt = "→ " if self.conversation.has_pending_question() else "> "
+        prompt = "→ " if self.state.conversation.is_waiting() else "> "
         user_input = self.view.get_input(prompt)
 
         # Quit-Check
         if user_input.lower() == 'quit':
+            self.state.stop()
             break
 
         # Abbrechen-Check
-        if self.conversation.has_pending_question():
+        if self.state.conversation.is_waiting():
             if user_input.lower() in ['abbrechen', 'zurück', 'cancel']:
-                self.conversation.reset()
-                self._update_game_state(conversation="Abgebrochen.")
+                self.state.conversation.reset()
+                self.view.show_message("Abgebrochen.")
                 continue
 
         # Pending Question? → Auflösen
-        if self.conversation.has_pending_question():
-            result = self.conversation.resolve_choice(user_input)
-            # ... handle result
+        if self.state.conversation.is_waiting():
+            # User wählt Nummer aus Options
+            # ... handle choice
             continue
 
         # === CONTROLLER ORCHESTRIERT ===
 
         # 1. Parser aufrufen
-        parsed = self.parser.parse(user_input)
+        parsed = self.parser_utils.parse(user_input)
         verb, noun = parsed[0]['verb'], parsed[0]['noun']
 
         # 2. Command-Matching
-        command_matches = self.embedding_utils.verb_to_command(verb)
+        commands = self.embedding_utils.verb_to_command(verb)
+        good_commands = [c for c in commands if c['sim'] >= 0.95]
 
-        # 3. Command validieren (ConversationSystem)
-        result = self.conversation.validate_command(verb, command_matches)
-        if result.status == 'needs_clarification':
-            self._update_game_state(conversation=self._format_question(result))
+        # 3. Command validieren
+        if len(good_commands) == 0:
+            self.view.show_message(f"Ich verstehe '{verb}' nicht.")
             continue
-        if result.status == 'error':
-            self._update_game_state(conversation=result.message)
+        if len(good_commands) > 1:
+            self.state.conversation.ask("Was möchtest du tun?", good_commands)
             continue
 
-        command = result.command
+        command = good_commands[0]['command']
 
         # 4. Entity-Matching
         candidates = self._get_candidates(command)
-        entity_matches = self.embedding_utils.match_entities(noun, candidates)
+        matches = self.embedding_utils.match_entities(noun, candidates)
 
-        # 5. Target validieren (ConversationSystem)
-        result = self.conversation.validate_target(noun, entity_matches, command)
-        if result.status == 'needs_clarification':
-            self._update_game_state(conversation=self._format_question(result))
-            continue
-        if result.status == 'error':
-            self._update_game_state(conversation=result.message)
+        # 5. Target validieren
+        if not matches:
+            self.view.show_message(f"Ich kann '{noun}' nicht finden.")
             continue
 
         # 6. Action ausführen
-        output = self._execute_action(result.action)
-        self._update_game_state(conversation=output)
+        output = self._execute_action(command, matches[0])
+        self.view.show_message(output)
 ```
 
 ---
@@ -564,10 +576,10 @@ except ValueError:
 ```python
 CANCEL_KEYWORDS = ['abbrechen', 'zurück', 'cancel', 'stop']
 
-if conversation.has_pending_question():
+if self.state.conversation.is_waiting():
     if user_input.lower() in CANCEL_KEYWORDS:
-        conversation.reset()
-        return "Abgebrochen."
+        self.state.conversation.reset()
+        self.view.show_message("Abgebrochen.")
 ```
 
 ---
@@ -763,13 +775,13 @@ def _get_clarification_question(self, command: str, noun: str) -> str:
 def _get_candidates(self, command: str) -> list:
     """Gibt relevante Entities für Command zurück - IM CONTROLLER!"""
     if command == 'go':
-        return self.game_state['exits']
+        return self.state.world.exits
     elif command == 'take':
-        return self.game_state['items']
+        return self.state.world.items
     elif command == 'drop':
-        return self.game_state['inventory']
+        return self.state.world.inventory
     elif command in ['use', 'examine']:
-        return self.game_state['items'] + self.game_state['inventory']
+        return self.state.world.items + self.state.world.inventory
     else:
         return []
 ```
@@ -930,9 +942,8 @@ User wählt: Schwert
 | **WorldState** | Dataclass: location, items, exits, inventory + `update()` Methode |
 | **ConversationState** | Dataclass: status (Enum), question, options, message + `ask()`, `reset()`, `is_waiting()` Methoden |
 | **WorldModel** | Neo4j Repository für Datenbank-Queries |
-| **SmartParserUtils** | Extrahiert verb/noun aus Text (pure function) |
-| **EmbeddingUtils** | Semantic Matching (pure function) |
-| **ConversationUtils** | Nur `has_pending_question()` Helper |
+| **SmartParserUtils** | Extrahiert verb/noun aus Text |
+| **EmbeddingUtils** | Semantic Matching |
 
 ### Dataclasses mit Methoden
 
@@ -1013,11 +1024,12 @@ self.state.conversation.reset()
 
 ```
 src/model/
-├── game_state.py           # GameState Container (mit WorldState, ConversationState)
+├── game_state.py           # GameState Container
+├── world_state.py          # WorldState Dataclass
+├── conversation_state.py   # ConversationState Dataclass + Status Enum
 ├── world_model.py          # Neo4j Repository
 
 src/utils/
-├── conversation_system.py  # ConversationUtils (minimal)
 ├── smart_parser.py         # SmartParserUtils
 └── embedding_utils.py      # EmbeddingUtils
 ```

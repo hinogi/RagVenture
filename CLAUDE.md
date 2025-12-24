@@ -90,7 +90,6 @@ python debug_db.py
 - **Utils** (Pure Functions):
   - `src/utils/smart_parser.py`: `SmartParserUtils`
   - `src/utils/embedding_utils.py`: `EmbeddingUtils`
-  - `src/utils/conversation_utils.py`: `ConversationUtils`
 
 **Architektur-Prinzipien:**
 1. **Controller orchestriert** - holt Daten von Repository, speichert in State
@@ -393,19 +392,18 @@ if self.state.conversation.is_waiting():
 1. **CRITICAL: Always check list bounds** - `match_entities()` kann leere Liste zurückgeben! IMMER prüfen: `if not matches: return error`
 2. **verb_to_command() returns list** - Nicht `command['best_command']` sondern `command[0]['command']` nach Filtern
 3. **Parser returns list of dicts** - `parsed[0]['verb']` nicht `parsed['verb']`
-4. **GameState ist Dataclass** - Zugriff via `self.game_state.running`, nicht `self.game_state['running']`
+4. **GameState ist Dataclass** - Zugriff via `self.state.running`, nicht `self.state['running']`
 5. **ConversationState.status ist Enum** - Vergleiche mit `Status.PROMPT`, `Status.REQUEST`
-6. **Utils haben _utils Suffix** - `parser_utils`, `embedding_utils`, `conversation_utils`
-7. **Prompt-Wechsel bei Rückfragen** - Bei `conversation_utils.has_pending_question()` Prompt ändern
-8. **Python dict vs set syntax** - `{'key': value}` not `{'key', value}`
-9. **Relationship directions matter** - `(a)-[:REL]->(b)` is different from `(a)<-[:REL]-(b)`
-10. **Cache issues** - Restart `python src/main.py` after code changes (Python caches modules)
-11. **Label filtering** - Use `:Item` in MATCH or `WHERE 'Item' IN labels(entity)` to filter node types
-12. **Relationship-Types typo-prone** - Nutze Schema-Konstanten aus Notebook (REL_IST_IN, REL_ÖFFNET, etc.)
-13. **IDs must be lowercase, no spaces** - Helper-Funktionen im Notebook erzwingen dies automatisch
-14. **Property-Names sind case-sensitive** - `is_locked` nicht `is_Locked` oder `isLocked`
-15. **Embedding matching ist teuer** - spaCy Model + SentenceTransformer = ~2s pro Input auf schwacher Hardware
-16. **Logging-Config** - Mehrfaches `basicConfig()` in verschiedenen Modulen kann zu Konflikten führen
+6. **Prompt-Wechsel bei Rückfragen** - Bei `self.state.conversation.is_waiting()` Prompt ändern
+7. **Python dict vs set syntax** - `{'key': value}` not `{'key', value}`
+8. **Relationship directions matter** - `(a)-[:REL]->(b)` is different from `(a)<-[:REL]-(b)`
+9. **Cache issues** - Restart `python src/main.py` after code changes (Python caches modules)
+10. **Label filtering** - Use `:Item` in MATCH or `WHERE 'Item' IN labels(entity)` to filter node types
+11. **Relationship-Types typo-prone** - Nutze Schema-Konstanten aus Notebook (REL_IST_IN, REL_ÖFFNET, etc.)
+12. **IDs must be lowercase, no spaces** - Helper-Funktionen im Notebook erzwingen dies automatisch
+13. **Property-Names sind case-sensitive** - `is_locked` nicht `is_Locked` oder `isLocked`
+14. **Embedding matching ist teuer** - spaCy Model + SentenceTransformer = ~2s pro Input auf schwacher Hardware
+15. **Logging-Config** - Mehrfaches `basicConfig()` in verschiedenen Modulen kann zu Konflikten führen
 
 ## Documentation
 
