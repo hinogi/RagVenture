@@ -1,7 +1,7 @@
 import logging
 from view.game_view import GameView
 from model.world_model import GameModel
-from model.game_state import GameState, Status
+from model.game_state import GameState, LoopStatus
 from utils.smart_parser import SmartParserUtils
 from utils.embedding_utils import EmbeddingUtils
 
@@ -45,7 +45,7 @@ class GameController:
                 self.state.running = False
                 break
 
-            if self.state.loop_state == Status.PARSE:
+            if self.state.loop_state == LoopStatus.PARSE:
 
                 # Parsing
                 parsed = self.parser_utils.parse(self.state.input)
@@ -53,9 +53,9 @@ class GameController:
                 self.state.noun = parsed[0]['noun']
 
                 # State
-                self.state.loop_state = Status.VERIFY
+                self.state.loop_state = LoopStatus.VERIFY
 
-            if self.state.loop_state == Status.VERIFY:
+            if self.state.loop_state == LoopStatus.VERIFY:
 
                 # Command matching
                 commands = self.embedding_utils.verb_to_command(self.state.verb)
@@ -72,23 +72,23 @@ class GameController:
                 if len(good_targets) > 1 or len(good_targets) == 0:
                     self.state.target_list = good_targets
                 
-                self.state.loop_state = Status.REQUEST
+                self.state.loop_state = LoopStatus.REQUEST
+            
+            if self.state.loop_state == LoopStatus.REQUEST:
+                pass
 
-            # run command
-            status = self.process_input(self.conversation.input)
+            if self.state.loop_state == LoopStatus.ACTION:
+                self.process_action()
 
     def _handle_target_candidates(self, exits, items, inventory):
 
         candidates = []
         
         for e in exits:
-            e['type'] = 'exit'
             candidates.append(e)
         for i in items:
-            i['type'] = 'item'
             candidates.append(i)
         for i in inventory:
-            i['type'] = 'inventory'
             candidates.append(i)
         
         return candidates
@@ -98,61 +98,31 @@ class GameController:
 
     def _handle_choise(self):
         pass
-
-
-
-    ## TODO: refactoring ##########
     
-    def process_input(self, input):
+    def process_action(self):
 
-        if best_command == 'go':
+        if self.state.action.command == 'go':
 
-            if not noun:
-                return f"Wohin genau?"
+            result = self.model.move_player(self.state.action.target)
+
+            if result:
+                self.state.message = f'Du bist jetzt in {result[0]['name']}'
             else:
-                # Ziel finden
-                exit = self.embedding_utils.match_entities(
-                    noun, 
-                    self.game_state['exits']
-                )
+                self.state.message = 'Ups, gestolpert?'
 
-                result = self.model.move_player(exit[0]['id'])
+        elif self.state.action.command == 'take':
 
-                if result:
-                    return f'Du bist jetzt in {result[0]['name']}'
-                else:
-                    return 'Ups, gestolpert?'
-
-        elif best_command == 'take':
-            if not noun:
-                return"Was genau?"
+            result = self.model.take_item(self.state.action.target)
+            
+            if result:
+                self.state.message =  f'Du trägst jetzt {result[0]['name']}'
             else:
-                item = self.embedding_utils.match_entities(
-                    noun, 
-                    self.game_state['items']
-                )
-                result = self.model.take_item(item[0]['id'])
+                self.state.message =  'Ups, fallengelassen?'
 
-                
-                if result:
-                    return f'Du trägst jetzt {result[0]['name']}'
-                else:
-                    return 'Ups, fallengelassen?'
-
-        elif best_command == 'drop':
-            if not noun:
-                return "Was denn?"
+        elif self.state.action.command == 'drop':
+            result = self.model.drop_item(self.state.action.target)
+            
+            if result:
+                self.state.message =  f'Du hast {result[0]['name']} abgelegt.'
             else:
-                item = self.embedding_utils.match_entities(
-                    noun,
-                    self.game_state['inventory']
-                )
-                result = self.model.drop_item(item[0]['id'])
-                
-                if result:
-                    return f'Du hast {result[0]['name']} abgelegt.'
-                else:
-                    return 'Ups, nicht da?'
-
-        else:
-            return f"Das konnte nicht entschlüsselt werden."
+                self.state.message =  'Ups, nicht da?'

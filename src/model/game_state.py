@@ -2,23 +2,35 @@ from enum import Enum
 from dataclasses import dataclass, field
 
 
-class Status(Enum):
+class LoopStatus(Enum):
     PARSE = 'wait_for_parsing'   # Wenn Eingaben durch den Parser müssen (Input zu Vern/Noun)
     VERIFY = 'wait_for_verify'   # Wenn command und target verifiziert werden müssen (Verb/Noun zu Command/Target)
     REQUEST = 'wait_for_answers' # Wenn eine Auswahl getroffen werden muss
     ACTION = 'wait_for_action'   # Wenn eine Action ausgeführt werden kann
 
+class ActionCommands(Enum):
+    GO = 'go'
+    TAKE = 'take'
+    DROP = 'drop'
+
+@dataclass
+class Action:
+    command: ActionCommands | None = None
+    target: str | None = None
+
 @dataclass
 class GameState:
     running: bool = False
-    loop_state: Status = Status.PARSE
+    loop_state: LoopStatus = LoopStatus.PARSE
 
     input: str | None = None
 
     verb: list | None = None
     noun: list | None = None
 
-    command_list: list | None = None
-    target_list: list | None = None
+    command_list: list = field(default_factory=list)
+    target_list: list = field(default_factory=list)
+
+    action: Action | None = None
 
     message: str | None = None
