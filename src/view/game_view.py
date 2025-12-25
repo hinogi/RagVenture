@@ -41,7 +41,7 @@ class GameView:
             padding=(2, 2)
         ))
 
-    def update_panels(self, location, items, exits, inventory):
+    def update_panels(self, location, items, exits, inventory, conversation):
 
         location_formated = f"[bold yellow]{location[0]['name']}[/bold yellow]\n{location[0]['description']}"
 
@@ -70,6 +70,7 @@ class GameView:
         self.layout['items'].update(Panel(items_formated))
         self.layout['exits'].update(Panel(exits_formated))
         self.layout['inventory'].update(Panel(inventory_formated))
+        self.layout['conversation'].update(Panel(conversation))
 
     def refresh(self, status=''):
         if platform.system() == 'Windows':

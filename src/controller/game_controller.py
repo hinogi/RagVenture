@@ -35,7 +35,7 @@ class GameController:
             inventory= self.model.player_inventory()
 
             # rendering
-            self.view.update_panels(location, items, exits, inventory)
+            self.view.update_panels(location, items, exits, inventory, self.state.message)
             self.view.refresh(status=self.state.message)
 
             # get input
@@ -45,7 +45,7 @@ class GameController:
                 self.state.running = False
                 break
 
-            if self.state.loop_state == 'PARSE':
+            if self.state.loop_state == Status.PARSE:
 
                 # Parsing
                 parsed = self.parser_utils.parse(self.state.input)
@@ -55,7 +55,7 @@ class GameController:
                 # State
                 self.state.loop_state = Status.VERIFY
 
-            if self.state.loop_state == 'VERIFY':
+            if self.state.loop_state == Status.VERIFY:
 
                 # Command matching
                 commands = self.embedding_utils.verb_to_command(self.state.verb)
@@ -72,7 +72,7 @@ class GameController:
                 if len(good_targets) > 1 or len(good_targets) == 0:
                     self.state.target_list = good_targets
                 
-                self.state.loop_state == Status.REQUEST
+                self.state.loop_state = Status.REQUEST
 
             # run command
             status = self.process_input(self.conversation.input)
@@ -99,6 +99,9 @@ class GameController:
     def _handle_choise(self):
         pass
 
+
+
+    ## TODO: refactoring ##########
     
     def process_input(self, input):
 

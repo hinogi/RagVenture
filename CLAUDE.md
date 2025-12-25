@@ -336,60 +336,78 @@ def _handle_command(self, user_input):
     # ...
 ```
 
-**State Dataclasses (sauber getrennt):**
+**State Dataclass (flach, State-Machine):**
 ```python
 # model/game_state.py
+class Status(Enum):
+    PARSE = 'wait_for_parsing'    # Input → Verb/Noun
+    VERIFY = 'wait_for_verify'    # Verb/Noun → Command/Target
+    REQUEST = 'wait_for_answers'  # Rückfrage aktiv
+    ACTION = 'wait_for_action'    # Bereit zur Ausführung
+
 @dataclass
 class GameState:
     running: bool = False
-    dialog: DialogState = field(default_factory=DialogState)
-    pending: PendingAction | None = None  # None = keine Action im Aufbau
+    loop_state: Status = Status.PARSE
 
-    def start(self): self.running = True
-    def stop(self): self.running = False
+    # Input & Parsing
+    input: str | None = None
+    verb: str | None = None
+    noun: str | None = None
 
-# model/dialog_state.py
-class Status(Enum):
-    PROMPT = 'wait_for_prompt'
-    REQUEST = 'wait_for_choice'
+    # Matching-Ergebnisse
+    command_list: list | None = None
+    target_list: list | None = None
 
-@dataclass
-class DialogState:
-    status: Status = Status.PROMPT
-    options: list = field(default_factory=list)
+    # Feedback
     message: str | None = None
+```
 
-    def is_waiting(self) -> bool:
-        return self.status == Status.REQUEST
-
-    def reset(self):
-        self.status = Status.PROMPT
-        self.options = []
-
-# model/pending_action.py
-@dataclass
-class PendingAction:
-    command: str
-    target: dict | None = None
+**State-Machine Flow:**
+```
+PARSE → verb/noun extrahieren
+  ↓
+VERIFY → command/target matchen
+  ↓ (bei Mehrdeutigkeit)
+REQUEST → Rückfrage anzeigen, Auswahl verarbeiten
+  ↓
+ACTION → Ausführen
+  ↓
+PARSE → Nächste Eingabe
 ```
 
 **Zugriff im Controller:**
 ```python
 self.state = GameState()
-self.state.start()
+self.state.running = True
 
-# Dialog
-self.state.dialog.is_waiting()
-self.state.dialog.options = exits
-self.state.dialog.status = Status.REQUEST
+# State-Wechsel
+self.state.loop_state = Status.VERIFY
 
-# Action im Aufbau
-self.state.pending = PendingAction(command='go')
-self.state.pending.target = selected_target
+# Daten akkumulieren
+self.state.verb = parsed[0]['verb']
+self.state.command_list = good_commands
+self.state.message = "Was meinst du?"
 
-# Nach Execute
-self.state.pending = None
-self.state.dialog.reset()
+# Check
+if self.state.loop_state == Status.REQUEST:
+    # Rückfrage verarbeiten
+```
+
+**Target-Matching (alle Candidates kombiniert):**
+```python
+def _handle_target_candidates(self, exits, items, inventory):
+    candidates = []
+    for e in exits:
+        e['type'] = 'exit'
+        candidates.append(e)
+    for i in items:
+        i['type'] = 'item'
+        candidates.append(i)
+    for i in inventory:
+        i['type'] = 'inventory'
+        candidates.append(i)
+    return candidates
 ```
 
 **World-Daten direkt vom Model (kein Caching):**
