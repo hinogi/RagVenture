@@ -1,9 +1,9 @@
-from rich.prompt import Prompt
-from rich.console import Console
-from rich.layout import Layout
-from rich.panel import Panel
 import os
 import platform
+from rich.panel import Panel
+from rich.prompt import Prompt
+from rich.layout import Layout
+from rich.console import Console
 
 
 class GameView:

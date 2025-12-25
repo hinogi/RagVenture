@@ -140,33 +140,38 @@ talk_to_npc(npc_id) → "dialogue text"
 
 **Aufgabe**: Spielzustand und Conversation-State als Dataclasses mit Methoden
 
-**Architektur:**
+**Architektur-Prinzip: DB ist Single Source of Truth**
 ```
 ┌─────────────────────────────────────────────────┐
 │                   GameState                      │
 │  running: bool                                   │
-│  ┌──────────────────┐  ┌─────────────────────┐  │
-│  │   WorldState     │  │ ConversationState   │  │
-│  │  location        │  │  status: Enum       │  │
-│  │  items, exits    │  │  question, options  │  │
-│  │  inventory       │  │                     │  │
-│  │  update(...)     │  │  ask(), reset()     │  │
-│  └──────────────────┘  │  is_waiting()       │  │
-│                        └─────────────────────┘  │
+│                                                  │
+│  ┌─────────────────────────────────────────┐    │
+│  │         ConversationState               │    │
+│  │  status: Enum (PROMPT / REQUEST)        │    │
+│  │  question, options                      │    │
+│  │  pending_command, pending_verb,         │    │
+│  │  pending_noun                           │    │
+│  │                                         │    │
+│  │  ask(), reset(), is_waiting()           │    │
+│  └─────────────────────────────────────────┘    │
+│                                                  │
 │  start(), stop()                                 │
 └─────────────────────────────────────────────────┘
+
+World-Daten → direkt vom Model (Neo4j)
 ```
 
 **Dateien:**
-- `src/model/game_state.py` - GameState Container
-- `src/model/world_state.py` - WorldState Dataclass
+- `src/model/game_state.py` - GameState Container (running + conversation)
 - `src/model/conversation_state.py` - ConversationState + Status Enum
 
 **Verantwortlichkeiten:**
-- ✅ **State-Container** (ein `GameState` für alles)
+- ✅ **State-Container** (ein `GameState` mit ConversationState)
 - ✅ **Dataclasses mit Methoden** (Logik gekapselt: `ask()`, `reset()`, `is_waiting()`)
-- ✅ **Parallele Regionen** (WorldState + ConversationState unabhängig)
+- ✅ **pending_* Fields** für Kontext bei Rückfragen
 - ✅ **field(default_factory=...)** für korrekte mutable Defaults
+- ❌ **KEIN WorldState-Caching** (DB ist Source of Truth)
 - ❌ **KEINE Business-Logik** (gehört in Controller/Model)
 
 **Beispiel-Flow:**
@@ -175,21 +180,25 @@ talk_to_npc(npc_id) → "dialogue text"
 self.state = GameState()
 self.state.start()
 
-# World aktualisieren
-self.state.world.update(location, items, exits, inventory)
+# World-Daten direkt vom Model (kein Caching!)
+items = self.model.location_content()
+exits = self.model.location_exits()
 
-# Rückfrage stellen
+# Rückfrage stellen (mit Kontext)
+self.state.conversation.pending_command = 'go'
 self.state.conversation.ask("Wohin?", exits)
 
-# Check ob Rückfrage aktiv
+# Check ob Rückfrage aktiv → Handler-Dispatch
 if self.state.conversation.is_waiting():
-    prompt = "→ "
+    self._handle_choice(user_input)
+else:
+    self._handle_command(user_input)
 
-# Zurücksetzen
+# Zurücksetzen (inkl. pending_*)
 self.state.conversation.reset()
 ```
 
-**Validierung passiert im Controller**, nicht in separater Klasse.
+**Validierung passiert im Controller** mit zwei Handlern.
 
 **Details:** Siehe `docs/conversation_system.md`
 
@@ -208,50 +217,130 @@ self.state.conversation.reset()
 - ❌ **KEINE Business-Logik** (gehört ins Model)
 
 **Merksatz (NEU):**
-> **Parser versteht Sprache. ConversationSystem validiert. Controller orchestriert. Model verwaltet Daten und Regeln.**
+> **Parser versteht Sprache. State speichert. Controller orchestriert. Model verwaltet Daten.**
 
-**Pseudo-Code (NEUE ARCHITEKTUR mit Statechart-Ready State):**
+**Game Loop Phasen:**
+
+```
+┌─────────────────────────────────────────┐
+│  PHASE 1: Setup                         │
+│  - State starten                        │
+│  - Welcome zeigen                       │
+└────────────────┬────────────────────────┘
+                 ▼
+┌─────────────────────────────────────────┐
+│  PHASE 2: Update & Render               │◄──┐
+│  - World-State laden                    │   │
+│  - View aktualisieren                   │   │
+└────────────────┬────────────────────────┘   │
+                 ▼                            │
+┌─────────────────────────────────────────┐   │
+│  PHASE 3: Input                         │   │
+│  - Prompt anzeigen (> oder →)           │   │
+│  - User-Input holen                     │   │
+└────────────────┬────────────────────────┘   │
+                 ▼                            │
+┌─────────────────────────────────────────┐   │
+│  PHASE 4: Quit?                         │   │
+│  - Wenn quit → raus                     │   │
+└────────────────┬────────────────────────┘   │
+                 ▼                            │
+┌─────────────────────────────────────────┐   │
+│  PHASE 5: Rückfrage aktiv?              │   │
+│  - Wenn ja → Auswahl/Abbruch handeln    │   │
+│  - Dann zurück zu Phase 2               │   │
+└────────────────┬────────────────────────┘   │
+                 ▼                            │
+┌─────────────────────────────────────────┐   │
+│  PHASE 6: Parse & Match                 │   │
+│  - Verb/Noun extrahieren                │   │
+│  - Command matchen                      │   │
+└────────────────┬────────────────────────┘   │
+                 ▼                            │
+┌─────────────────────────────────────────┐   │
+│  PHASE 7: Validate & Execute            │   │
+│  - Command validieren                   │   │
+│  - Bei Mehrdeutigkeit → Rückfrage       │   │
+│  - Sonst → Ausführen                    │   │
+└────────────────┴────────────────────────┘───┘
+```
+
+**Pseudo-Code (Two-Handler Pattern):**
 ```python
 def run_game(self):
-    """Hauptloop mit State-Dataclasses"""
-    self.state.start()  # state.running = True
+    # ══════════════════════════════════════
+    # PHASE 1: Setup
+    # ══════════════════════════════════════
+    self.state.start()
+    self.view.show_welcome()
+    input()  # Warte auf Enter
 
     while self.state.running:
-        # 1. World-State aktualisieren
-        self.state.world.update(
-            location=self.model.current_location(),
-            items=self.model.location_content(),
-            exits=self.model.location_exits(),
-            inventory=self.model.player_inventory()
-        )
-        self.view.update_panels(...)
+        # ══════════════════════════════════════
+        # PHASE 2: Update & Render (DB ist Source of Truth)
+        # ══════════════════════════════════════
+        self._update_view()  # Holt Daten direkt vom Model
 
-        # 2. Input holen (Prompt je nach Conversation-State)
+        # ══════════════════════════════════════
+        # PHASE 3: Input
+        # ══════════════════════════════════════
         prompt = "→ " if self.state.conversation.is_waiting() else "> "
         user_input = self.view.get_input(prompt)
 
-        # 3. Quit-Check
-        if user_input == 'quit':
+        # ══════════════════════════════════════
+        # PHASE 4: Quit?
+        # ══════════════════════════════════════
+        if user_input.lower() == 'quit':
             self.state.stop()
             break
 
-        # 4. Rückfrage aktiv? → Auflösen
+        # ══════════════════════════════════════
+        # PHASE 5-7: Handler-Dispatch (zwei Modi)
+        # ══════════════════════════════════════
         if self.state.conversation.is_waiting():
-            # Handle choice...
-            continue
+            self._handle_choice(user_input)  # Rückfrage-Modus
+        else:
+            self._handle_command(user_input)  # Normal-Modus
 
-        # 5. Parsing + Validation im Controller
-        parsed = self.parser_utils.parse(user_input)
-        # ... Command-Matching, Entity-Matching
 
-        # 6. Bei Mehrdeutigkeit → Rückfrage stellen
-        if len(good_commands) > 1:
-            self.state.conversation.ask("Was möchtest du tun?", good_commands)
-            continue
+def _handle_choice(self, user_input):
+    """Rückfrage-Modus: Auswahl oder Abbruch"""
+    if user_input.lower() in ['abbrechen', 'cancel']:
+        self.state.conversation.reset()
+        return
 
-        # 7. Action ausführen
-        output = self._execute_action(command, target)
-        self.view.show_message(output)
+    # Nummer → Auswahl aus options
+    try:
+        choice = int(user_input) - 1
+        options = self.state.conversation.options
+        if 0 <= choice < len(options):
+            selected = options[choice]
+            command = self.state.conversation.pending_command
+            self.state.conversation.reset()
+            self._execute_action(command, selected)
+    except ValueError:
+        self.view.show_message("Bitte eine Nummer eingeben.")
+
+
+def _handle_command(self, user_input):
+    """Normal-Modus: Parse → Match → Execute"""
+    parsed = self.parser_utils.parse(user_input)
+    verb, noun = parsed[0]['verb'], parsed[0]['noun']
+
+    commands = self.embedding_utils.verb_to_command(verb)
+    good_commands = [c for c in commands if c['sim'] >= 0.95]
+
+    if len(good_commands) == 0:
+        self.view.show_message(f"Ich verstehe '{verb}' nicht.")
+        return
+
+    if len(good_commands) > 1:
+        self.state.conversation.pending_verb = verb
+        self.state.conversation.ask("Was möchtest du tun?", good_commands)
+        return
+
+    command = good_commands[0]['command']
+    # Entity-Matching und Execute...
 
 def _execute_action(self, action: Action):
     """Führt validierte Action aus"""
@@ -273,10 +362,10 @@ def _execute_action(self, action: Action):
 ```
 
 **Faustregel (ERWEITERT):**
-> Alles was mit **Daten und Logik** zu tun hat → **Model**.
-> Alles was **Ablauf und UI** betrifft → **Controller**.
-> Alles was **Text-Verständnis** betrifft → **Parser**.
-> Alles was **Validierung und Rückfragen** betrifft → **ConversationSystem**.
+> Alles was mit **Daten und Logik** zu tun hat → **Model** (DB ist Source of Truth).
+> Alles was **Ablauf und UI** betrifft → **Controller** (zwei Handler für saubere Trennung).
+> Alles was **Text-Verständnis** betrifft → **Parser** (spaCy + Embeddings).
+> Alles was **State-Management** betrifft → **Dataclasses** (GameState + ConversationState).
 
 ---
 
@@ -434,5 +523,5 @@ User sees result
 ---
 
 **Status**: Living Document
-**Letzte Aktualisierung**: 21. Dezember 2024
-**Version**: MVP Phase 1 + Smart Parser + Statechart-Ready State
+**Letzte Aktualisierung**: 24. Dezember 2024
+**Version**: MVP Phase 1 + Smart Parser + Two-Handler Pattern (DB ist Source of Truth)

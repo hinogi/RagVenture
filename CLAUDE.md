@@ -80,22 +80,23 @@ python debug_db.py
 ```
 
 **Komponenten:**
-- **Repository** (`src/model/world_model.py`): Neo4j Queries, gibt Daten zurück
+- **Repository** (`src/model/world_model.py`): Neo4j Queries, gibt Daten zurück - **Single Source of Truth**
 - **View** (`src/view/game_view.py`): Rich terminal UI
-- **Controller** (`src/controller/game_controller.py`): Orchestriert alles
+- **Controller** (`src/controller/game_controller.py`): Orchestriert alles, zwei Handler:
+  - `_handle_command()` - Normal-Modus (Parse → Match → Execute)
+  - `_handle_choice()` - Rückfrage-Modus (Auswahl/Abbruch)
 - **State** (Dataclasses mit Methoden):
-  - `src/model/game_state.py`: `GameState` - Container für alle States
-  - `src/model/world_state.py`: `WorldState` - location, items, exits, inventory
-  - `src/model/conversation_state.py`: `ConversationState` - status, question, options
+  - `src/model/game_state.py`: `GameState` - running + ConversationState
+  - `src/model/conversation_state.py`: `ConversationState` - status, question, options, pending_*
 - **Utils** (Pure Functions):
   - `src/utils/smart_parser.py`: `SmartParserUtils`
   - `src/utils/embedding_utils.py`: `EmbeddingUtils`
 
 **Architektur-Prinzipien:**
-1. **Controller orchestriert** - holt Daten von Repository, speichert in State
-2. **Dataclasses mit Methoden** - kapseln ihre eigene Logik (z.B. `state.conversation.ask()`)
-3. **Utils sind pure** - Input → Output, keine Side Effects
-4. **Ein State-Container** - `GameState` enthält `WorldState` + `ConversationState` (Statechart-ready)
+1. **DB ist Source of Truth** - WorldState nicht gecacht, immer frisch vom Model holen
+2. **Controller orchestriert** - zwei Handler je nach Conversation-Status
+3. **Dataclasses mit Methoden** - kapseln ihre eigene Logik (z.B. `state.conversation.ask()`)
+4. **Utils sind pure** - Input → Output, keine Side Effects
 
 ### Key Design Decisions
 
@@ -292,99 +293,110 @@ embedding_utils2 = EmbeddingUtils() # Gibt gleiche Instanz zurück
 # Model wird nur einmal in _instance gespeichert
 ```
 
-**Game Loop Pattern (Controller orchestriert):**
+**Game Loop Pattern (zwei Handler):**
 ```python
 def run_game(self):
-    self._run_game(True)  # game_state.running = True
+    # Setup
+    self.state.start()
     self.view.show_welcome()
+    input()
 
-    while self.game_state.running:
-        # 1. State aktualisieren & rendern
-        self._update_game_state()
-        self.view.refresh()
+    while self.state.running:
+        # Update & Render
+        self._update_view()
 
-        # 2. Input holen
-        user_input = self.view.get_input()
+        # Input
+        user_input = self._get_input()
 
-        if user_input == 'quit':
-            self.game_state.running = False
+        if user_input.lower() == 'quit':
+            self.state.stop()
             break
 
-        # 3. Parsing
-        parsed = self.parser_utils.parse(user_input)
-        verb, noun = parsed[0]['verb'], parsed[0]['noun']
+        # Je nach Modus: Handler aufrufen
+        if self.state.conversation.is_waiting():
+            self._handle_choice(user_input)
+        else:
+            self._handle_command(user_input)
 
-        # 4. Command-Matching
-        commands = self.embedding_utils.verb_to_command(verb)
-        good_commands = [c for c in commands if c['sim'] >= 0.95]
 
-        # 5. Command ausführen
-        # ...
+def _handle_choice(self, user_input):
+    """Rückfrage-Modus: Auswahl oder Abbruch"""
+    if user_input.lower() in ['abbrechen', 'cancel']:
+        self.state.conversation.reset()
+        return
+    # Nummer → Auswahl aus options
+    # ...
+
+
+def _handle_command(self, user_input):
+    """Normal-Modus: Parse → Match → Execute"""
+    parsed = self.parser_utils.parse(user_input)
+    verb, noun = parsed[0]['verb'], parsed[0]['noun']
+    # Command-Matching, Entity-Matching, Execute
+    # ...
 ```
 
-**State Dataclasses (mit Methoden):**
+**State Dataclasses (sauber getrennt):**
 ```python
 # model/game_state.py
 @dataclass
 class GameState:
     running: bool = False
-    world: WorldState = field(default_factory=WorldState)
-    conversation: ConversationState = field(default_factory=ConversationState)
+    dialog: DialogState = field(default_factory=DialogState)
+    pending: PendingAction | None = None  # None = keine Action im Aufbau
 
-    def start(self):
-        self.running = True
+    def start(self): self.running = True
+    def stop(self): self.running = False
 
-    def stop(self):
-        self.running = False
-
-# model/world_state.py
-@dataclass
-class WorldState:
-    location: dict | None = None
-    items: list = field(default_factory=list)
-    exits: list = field(default_factory=list)
-    inventory: list = field(default_factory=list)
-
-    def update(self, location, items, exits, inventory):
-        self.location = location
-        self.items = items
-        self.exits = exits
-        self.inventory = inventory
-
-# model/conversation_state.py
+# model/dialog_state.py
 class Status(Enum):
     PROMPT = 'wait_for_prompt'
     REQUEST = 'wait_for_choice'
 
 @dataclass
-class ConversationState:
+class DialogState:
     status: Status = Status.PROMPT
-    question: str | None = None
     options: list = field(default_factory=list)
     message: str | None = None
 
-    def ask(self, question: str, options: list):
-        self.status = Status.REQUEST
-        self.question = question
-        self.options = options
+    def is_waiting(self) -> bool:
+        return self.status == Status.REQUEST
 
     def reset(self):
         self.status = Status.PROMPT
-        self.question = None
         self.options = []
 
-    def is_waiting(self) -> bool:
-        return self.status == Status.REQUEST
+# model/pending_action.py
+@dataclass
+class PendingAction:
+    command: str
+    target: dict | None = None
 ```
 
 **Zugriff im Controller:**
 ```python
 self.state = GameState()
 self.state.start()
-self.state.world.update(loc, items, exits, inv)
-self.state.conversation.ask("Wohin?", options)
-if self.state.conversation.is_waiting():
-    ...
+
+# Dialog
+self.state.dialog.is_waiting()
+self.state.dialog.options = exits
+self.state.dialog.status = Status.REQUEST
+
+# Action im Aufbau
+self.state.pending = PendingAction(command='go')
+self.state.pending.target = selected_target
+
+# Nach Execute
+self.state.pending = None
+self.state.dialog.reset()
+```
+
+**World-Daten direkt vom Model (kein Caching):**
+```python
+items = self.model.location_content()
+exits = self.model.location_exits()
+inventory = self.model.player_inventory()
 ```
 
 ### Known Gotchas
@@ -412,10 +424,8 @@ if self.state.conversation.is_waiting():
 - `docs/commands.md` - Command-System (alle Commands, Verb-Mapping, Parser-Format)
 
 **Technical Docs:**
-- `docs/conversation_system.md` - ConversationSystem Architektur (Validierung, Rückfragen)
-- `docs/neo4j_cheatsheet.md` - Cypher WHERE clause reference
-- `docs/architecture_idea.md` - Original architecture vision (für Referenz)
-- `docs/neo4j_docker.md` - Docker setup details
+- `docs/conversation_system.md` - State-Architektur, Handler, Rückfragen
+- `docs/architecture_idea.md` - Architektur-Vision & Game Loop Phasen
 
 **General:**
 - `README.md` - Setup instructions and roadmap

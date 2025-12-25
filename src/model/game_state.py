@@ -1,13 +1,23 @@
+from enum import Enum
 from dataclasses import dataclass, field
-from model.world_state import WorldState
-from model.conversation_state import ConversationState
 
+
+class Status(Enum):
+    PARSE = 'wait_for_parsing'  # Wenn Eingaben durch den Parser müssen (Input zu Vern/Noun)
+    VERIFY = 'wait_for_verify'  # Wenn command und target verifiziert werden müssen (Verb/Noun zu Command/Target)
+    ACTION = 'wait_for_action'        # Wenn eine Action ausgeführt werden kann
 
 @dataclass
 class GameState:
     running: bool = False
-    game: WorldState = field(default_factory=WorldState)
-    conversation: ConversationState = field(default_factory=ConversationState)
+    loop_state: Status.PARSE
 
-    def set_run_state(self, state):
-        self.running = state
+    input: str | None = None
+
+    verb: list | None = None
+    noun: list | None = None
+
+    command_list: list | None = None
+    target_list: list | None = None
+
+    message: str | None = None

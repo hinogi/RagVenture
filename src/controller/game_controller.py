@@ -21,7 +21,7 @@ class GameController:
         self.state = GameState()
 
     def run_game(self):
-        self.state.set_run_state(True)
+        self.state.running = True
 
         # Intro :)
         self.view.show_welcome()
@@ -29,46 +29,59 @@ class GameController:
 
         while self.state.running:
 
-            # Check conversation
-            if self.conversation.status == 'PROMPT':
-                self.conversation.input = self.view.get_input()
+            location= self.model.current_location(),
+            items= self.model.location_content(),
+            exits= self.model.location_exits(),
+            inventory= self.model.player_inventory()
 
-            # Parsing
-            parsed = self.parser_utils.parse(input)
-            verb = parsed[0]['verb']
-            noun = parsed[0]['noun']
+            # rendering
+            self.view.update_panels(location, items, exits, inventory)
+            self.view.refresh(status=status)
 
-            # Commanding
-            commands = self.embedding_utils.verb_to_command(verb)
-            good_commands = [c for c in commands if c['sim'] >= .95]
+            # get input
+            self.state.input = self.view.get_input()
 
-            if len(good_commands) >= 2 or len(good_commands) == 0:
-                logging.info(f"=== Validate Verb: {good_commands} ===")
-                return f"Was möchtest du tun?"
-            else:
-                best_command = good_commands[0]['command']
+            if self.state.input == 'quit':
+                self.state.running = False
+                break
+
+            if self.state.loop_state == 'PARSE':
+
+                # Parsing
+                parsed = self.parser_utils.parse(input)
+                self.state.verb = parsed[0]['verb']
+                self.state.noun = parsed[0]['noun']
+
+                # State
+                self.state.loop_state = 'VERIFY'
+
+            if self.state.loop_state == 'VERIFY':
+
+                # Command finden
+                commands = self.embedding_utils.verb_to_command(self.state.verb)
+                good_commands = [c for c in commands if c['sim'] >= .95]
+
+                if len(good_commands) > 1 or len(good_commands) == 0:
+                    self.state.command_list = good_commands
+                    self.state.message = "Was meinst Du?" 
+                    continue
+
+                # Target finden
+
+
+                # Commanding
+
+
 
             # run command
             status = self.process_input(self.conversation.input)
 
-            # update latest game_states
-            self.world.update_world_state(
-                location= self.model.current_location(),
-                items= self.model.location_content(),
-                exits= self.model.location_exits(),
-                inventory= self.model.player_inventory()
-            )
 
-            self.view.update_panels(**self.state)
-            self.view.refresh(status=status)
+    def _handle_parse(self):
+        pass
 
-            # Prompt
-
-            if input == 'quit':
-                self.game_running = False
-                return "Auf Wiedersehen!"
-
-
+    def _handle_choise(self):
+        pass
 
     
     def process_input(self, input):

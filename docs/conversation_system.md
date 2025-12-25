@@ -2,15 +2,14 @@
 
 ## Übersicht
 
-**Statechart-Ready Architektur:** Ein GameState Container mit parallelen Regionen (WorldState + ConversationState). Dataclasses mit Methoden für gekapselte Logik. Controller orchestriert und ruft Parser/EmbeddingUtils selbst auf.
+**Statechart-Ready Architektur:** Ein GameState Container mit ConversationState. Dataclasses mit Methoden für gekapselte Logik. Controller orchestriert mit zwei Handlern und ruft Parser/EmbeddingUtils selbst auf. **DB ist Single Source of Truth** - kein WorldState-Caching.
 
 **Datei-Struktur:**
 ```
 src/model/
-├── game_state.py           # GameState Container
-├── world_state.py          # WorldState Dataclass mit update()
+├── game_state.py           # GameState Container (running + conversation)
 ├── conversation_state.py   # ConversationState Dataclass mit ask(), reset(), is_waiting()
-├── world_model.py          # Neo4j Repository
+├── world_model.py          # Neo4j Repository (Single Source of Truth)
 
 src/utils/
 ├── smart_parser.py         # SmartParserUtils
@@ -431,6 +430,10 @@ class ConversationState:
     question: str | None = None
     options: list = field(default_factory=list)
     message: str | None = None
+    # Kontext für Rückfragen (wird bei Antwort gebraucht)
+    pending_command: str | None = None
+    pending_verb: str | None = None
+    pending_noun: str | None = None
 
     def ask(self, question: str, options: list):
         """Stellt eine Rückfrage"""
@@ -443,6 +446,9 @@ class ConversationState:
         self.status = Status.PROMPT
         self.question = None
         self.options = []
+        self.pending_command = None
+        self.pending_verb = None
+        self.pending_noun = None
 
     def is_waiting(self) -> bool:
         """Check ob Rückfrage aktiv"""
@@ -460,71 +466,108 @@ self.state.conversation.reset()
 
 ## Game Loop Integration
 
-### Pseudo-Code (neuer Game Loop)
+### Pseudo-Code (neuer Game Loop mit zwei Handlern)
 
-**Controller orchestriert - ConversationSystem nur für Validierung:**
+**Controller orchestriert mit zwei Handlern - trennt Rückfrage-Modus von Normal-Modus:**
 
 ```python
 def run_game(self):
     self.state.start()  # state.running = True
+    self.view.show_welcome()
+    input()
 
     while self.state.running:
-        self._update_game_state()
+        # ══════════════════════════════════════
+        # Update & Render (DB ist Source of Truth)
+        # ══════════════════════════════════════
+        self._update_view()  # Holt Daten direkt vom Model
 
-        # Prompt wechseln bei Rückfrage
+        # ══════════════════════════════════════
+        # Input
+        # ══════════════════════════════════════
         prompt = "→ " if self.state.conversation.is_waiting() else "> "
         user_input = self.view.get_input(prompt)
 
-        # Quit-Check
+        # ══════════════════════════════════════
+        # Quit?
+        # ══════════════════════════════════════
         if user_input.lower() == 'quit':
             self.state.stop()
             break
 
-        # Abbrechen-Check
+        # ══════════════════════════════════════
+        # Handler-Dispatch (zwei Modi)
+        # ══════════════════════════════════════
         if self.state.conversation.is_waiting():
-            if user_input.lower() in ['abbrechen', 'zurück', 'cancel']:
-                self.state.conversation.reset()
-                self.view.show_message("Abgebrochen.")
-                continue
+            self._handle_choice(user_input)
+        else:
+            self._handle_command(user_input)
 
-        # Pending Question? → Auflösen
-        if self.state.conversation.is_waiting():
-            # User wählt Nummer aus Options
-            # ... handle choice
-            continue
 
-        # === CONTROLLER ORCHESTRIERT ===
+def _handle_choice(self, user_input):
+    """Rückfrage-Modus: Auswahl oder Abbruch"""
+    # Abbrechen?
+    if user_input.lower() in ['abbrechen', 'zurück', 'cancel']:
+        self.state.conversation.reset()
+        return
 
-        # 1. Parser aufrufen
-        parsed = self.parser_utils.parse(user_input)
-        verb, noun = parsed[0]['verb'], parsed[0]['noun']
+    # Nummer → Auswahl aus options
+    try:
+        choice = int(user_input) - 1
+        options = self.state.conversation.options
+        if 0 <= choice < len(options):
+            selected = options[choice]
+            # Mit pending_command weitermachen
+            command = self.state.conversation.pending_command
+            self.state.conversation.reset()
+            output = self._execute_action(command, selected)
+            self.view.show_message(output)
+        else:
+            self.view.show_message(f"Bitte wähle 1-{len(options)}.")
+    except ValueError:
+        self.view.show_message("Bitte eine Nummer eingeben.")
 
-        # 2. Command-Matching
-        commands = self.embedding_utils.verb_to_command(verb)
-        good_commands = [c for c in commands if c['sim'] >= 0.95]
 
-        # 3. Command validieren
-        if len(good_commands) == 0:
-            self.view.show_message(f"Ich verstehe '{verb}' nicht.")
-            continue
-        if len(good_commands) > 1:
-            self.state.conversation.ask("Was möchtest du tun?", good_commands)
-            continue
+def _handle_command(self, user_input):
+    """Normal-Modus: Parse → Match → Execute"""
+    # 1. Parser aufrufen
+    parsed = self.parser_utils.parse(user_input)
+    verb, noun = parsed[0]['verb'], parsed[0]['noun']
 
-        command = good_commands[0]['command']
+    # 2. Command-Matching
+    commands = self.embedding_utils.verb_to_command(verb)
+    good_commands = [c for c in commands if c['sim'] >= 0.95]
 
-        # 4. Entity-Matching
-        candidates = self._get_candidates(command)
-        matches = self.embedding_utils.match_entities(noun, candidates)
+    # 3. Command validieren
+    if len(good_commands) == 0:
+        self.view.show_message(f"Ich verstehe '{verb}' nicht.")
+        return
+    if len(good_commands) > 1:
+        self.state.conversation.pending_verb = verb
+        self.state.conversation.ask("Was möchtest du tun?", good_commands)
+        return
 
-        # 5. Target validieren
-        if not matches:
-            self.view.show_message(f"Ich kann '{noun}' nicht finden.")
-            continue
+    command = good_commands[0]['command']
 
-        # 6. Action ausführen
-        output = self._execute_action(command, matches[0])
-        self.view.show_message(output)
+    # 4. Entity-Matching (Kandidaten vom Model holen)
+    candidates = self._get_candidates(command)
+    matches = self.embedding_utils.match_entities(noun, candidates)
+
+    # 5. Target validieren
+    if not matches:
+        self.view.show_message(f"Ich kann '{noun}' nicht finden.")
+        return
+
+    if len([m for m in matches if m['score'] >= 0.70]) > 1:
+        # Mehrdeutig → Rückfrage
+        self.state.conversation.pending_command = command
+        self.state.conversation.pending_noun = noun
+        self.state.conversation.ask("Was genau meinst du?", matches[:3])
+        return
+
+    # 6. Action ausführen
+    output = self._execute_action(command, matches[0])
+    self.view.show_message(output)
 ```
 
 ---
@@ -773,15 +816,15 @@ def _get_clarification_question(self, command: str, noun: str) -> str:
 
 ```python
 def _get_candidates(self, command: str) -> list:
-    """Gibt relevante Entities für Command zurück - IM CONTROLLER!"""
+    """Gibt relevante Entities für Command zurück - direkt vom Model (DB)"""
     if command == 'go':
-        return self.state.world.exits
+        return self.model.location_exits()
     elif command == 'take':
-        return self.state.world.items
+        return self.model.location_content()
     elif command == 'drop':
-        return self.state.world.inventory
+        return self.model.player_inventory()
     elif command in ['use', 'examine']:
-        return self.state.world.items + self.state.world.inventory
+        return self.model.location_content() + self.model.player_inventory()
     else:
         return []
 ```
@@ -909,39 +952,44 @@ User wählt: Schwert
 
 ## Zusammenfassung
 
-### Architektur-Prinzip: Statechart-Ready
+### Architektur-Prinzip: DB ist Source of Truth
 
-**Ein GameState Container mit parallelen Regionen (WorldState + ConversationState):**
+**Ein GameState Container mit ConversationState. Controller hat zwei Handler für saubere Trennung:**
 
 ```
 ┌─────────────────────────────────────────────────┐
 │                   GameState                      │
 │  running: bool                                   │
-│  ┌──────────────────┐  ┌─────────────────────┐  │
-│  │   WorldState     │  │ ConversationState   │  │
-│  │  ─────────────   │  │  ────────────────   │  │
-│  │  location        │  │  status: Enum       │  │
-│  │  items           │  │  question           │  │
-│  │  exits           │  │  options            │  │
-│  │  inventory       │  │  message            │  │
-│  │                  │  │                     │  │
-│  │  update(...)     │  │  ask(question, opt) │  │
-│  └──────────────────┘  │  reset()            │  │
-│                        │  is_waiting()       │  │
-│  start()               └─────────────────────┘  │
-│  stop()                                          │
+│                                                  │
+│  ┌─────────────────────────────────────────┐    │
+│  │         ConversationState               │    │
+│  │  ─────────────────────────────────────  │    │
+│  │  status: Enum (PROMPT / REQUEST)        │    │
+│  │  question: str | None                   │    │
+│  │  options: list                          │    │
+│  │  pending_command: str | None            │    │
+│  │  pending_verb: str | None               │    │
+│  │  pending_noun: str | None               │    │
+│  │                                         │    │
+│  │  ask(question, options)                 │    │
+│  │  reset()                                │    │
+│  │  is_waiting() → bool                    │    │
+│  └─────────────────────────────────────────┘    │
+│                                                  │
+│  start(), stop()                                 │
 └─────────────────────────────────────────────────┘
+
+World-Daten → direkt vom Model (Neo4j)
 ```
 
-**Parallele Regionen:** WorldState und ConversationState laufen unabhängig, werden aber zusammen verwaltet.
+**Kein WorldState-Caching:** World-Daten werden bei jedem Loop direkt vom Model geholt.
 
 | Komponente | Verantwortung |
 |------------|---------------|
-| **Controller** | Orchestriert Flow. Ruft Parser, EmbeddingUtils auf. Manipuliert State. Führt Actions aus. |
-| **GameState** | Container-Dataclass mit `running`, `world`, `conversation` |
-| **WorldState** | Dataclass: location, items, exits, inventory + `update()` Methode |
-| **ConversationState** | Dataclass: status (Enum), question, options, message + `ask()`, `reset()`, `is_waiting()` Methoden |
-| **WorldModel** | Neo4j Repository für Datenbank-Queries |
+| **Controller** | Orchestriert Flow mit zwei Handlern: `_handle_choice()` und `_handle_command()` |
+| **GameState** | Container-Dataclass mit `running` + `conversation` |
+| **ConversationState** | Dataclass: status (Enum), question, options, pending_* + Methoden |
+| **WorldModel** | Neo4j Repository - **Single Source of Truth** |
 | **SmartParserUtils** | Extrahiert verb/noun aus Text |
 | **EmbeddingUtils** | Semantic Matching |
 
@@ -951,24 +999,10 @@ User wählt: Schwert
 @dataclass
 class GameState:
     running: bool = False
-    world: WorldState = field(default_factory=WorldState)
     conversation: ConversationState = field(default_factory=ConversationState)
 
     def start(self): self.running = True
     def stop(self): self.running = False
-
-@dataclass
-class WorldState:
-    location: dict | None = None
-    items: list = field(default_factory=list)
-    exits: list = field(default_factory=list)
-    inventory: list = field(default_factory=list)
-
-    def update(self, location, items, exits, inventory):
-        self.location = location
-        self.items = items
-        self.exits = exits
-        self.inventory = inventory
 
 @dataclass
 class ConversationState:
@@ -976,6 +1010,9 @@ class ConversationState:
     question: str | None = None
     options: list = field(default_factory=list)
     message: str | None = None
+    pending_command: str | None = None
+    pending_verb: str | None = None
+    pending_noun: str | None = None
 
     def ask(self, question: str, options: list):
         self.status = Status.REQUEST
@@ -986,6 +1023,9 @@ class ConversationState:
         self.status = Status.PROMPT
         self.question = None
         self.options = []
+        self.pending_command = None
+        self.pending_verb = None
+        self.pending_noun = None
 
     def is_waiting(self) -> bool:
         return self.status == Status.REQUEST
@@ -994,29 +1034,29 @@ class ConversationState:
 ### Zugriff im Controller
 
 ```python
-# Ein Container für alles
+# State Container
 self.state = GameState()
 
 # Lifecycle
 self.state.start()
 self.state.stop()
 
-# World aktualisieren
-self.state.world.update(
-    location=self.model.current_location(),
-    items=self.model.location_content(),
-    exits=self.model.location_exits(),
-    inventory=self.model.player_inventory()
-)
+# World-Daten direkt vom Model (kein Caching!)
+items = self.model.location_content()
+exits = self.model.location_exits()
+inventory = self.model.player_inventory()
 
-# Rückfrage stellen
+# Rückfrage stellen (mit Kontext)
+self.state.conversation.pending_command = 'go'
 self.state.conversation.ask("Wohin?", exits)
 
 # Check ob Rückfrage aktiv
 if self.state.conversation.is_waiting():
-    prompt = "→ "
+    self._handle_choice(user_input)
+else:
+    self._handle_command(user_input)
 
-# Rückfrage zurücksetzen
+# Rückfrage zurücksetzen (inkl. pending_*)
 self.state.conversation.reset()
 ```
 
@@ -1024,10 +1064,9 @@ self.state.conversation.reset()
 
 ```
 src/model/
-├── game_state.py           # GameState Container
-├── world_state.py          # WorldState Dataclass
+├── game_state.py           # GameState Container (running + conversation)
 ├── conversation_state.py   # ConversationState Dataclass + Status Enum
-├── world_model.py          # Neo4j Repository
+├── world_model.py          # Neo4j Repository (Single Source of Truth)
 
 src/utils/
 ├── smart_parser.py         # SmartParserUtils
@@ -1036,15 +1075,15 @@ src/utils/
 
 ### Kernvorteile
 
-- ✅ **Statechart-Ready** - Parallele Regionen vorbereitet
+- ✅ **DB ist Source of Truth** - Kein WorldState-Caching, immer aktuelle Daten
+- ✅ **Zwei Handler** - `_handle_choice()` und `_handle_command()` trennen Modi sauber
+- ✅ **pending_* Fields** - Kontext für Rückfragen erhalten
 - ✅ **Dataclasses mit Methoden** - Logik gekapselt, nicht im Controller
 - ✅ **field(default_factory=...)** - Korrekte mutable Defaults
-- ✅ **Controller orchestriert** - Keine Logik in Utils ausgelagert
 - ✅ **Status als Enum** - Keine Typos bei Status-Werten
-- ✅ **Ein State-Container** - `self.state` statt viele Variablen
-- ✅ **Erweiterbar** - Später für NPC-Dialoge, Combat, Quests (neue Regionen)
+- ✅ **Erweiterbar** - Später für NPC-Dialoge, Combat, Quests
 
 ---
 
-**Version:** 4.0 (Statechart-Ready Architektur)
-**Letzte Aktualisierung:** 21. Dezember 2024
+**Version:** 5.0 (DB ist Source of Truth + Two-Handler Pattern)
+**Letzte Aktualisierung:** 24. Dezember 2024
