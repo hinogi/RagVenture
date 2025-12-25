@@ -73,17 +73,19 @@ class GameView:
             inventory_formated = "Nichts dabei"
         self.layout['inventory'].update(Panel(inventory_formated))
 
+    def update_dialog(self, dialog=None):
+        
+        if dialog:
+            content = ''
 
-    def update_dialog(self, dialog):
-        content = ''
+            if dialog.type == 'message':
+                content = dialog.text
+            elif dialog.type == 'request_verb':
+                for i, choice in enumerate(dialog.choices, 1):
+                    content += f"({i}) {choice} | "
 
-        if dialog.type == 'message':
-            content = dialog.text
-        elif dialog.type == 'request_verb':
-            for i, choice in enumerate(dialog.choices, 1):
-                content += f"({i}) {choice} | "
+            content = "(0) abbrechen"
 
-        content = "(0) abbrechen "
         self.layout['dialog'].update(Panel(content or "..."))
 
 

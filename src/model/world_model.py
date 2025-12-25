@@ -48,7 +48,7 @@ class GameModel:
         """
         return self._run_query(query)
 
-    def location_content(self):
+    def location_items(self):
         query = """
         MATCH (p:Player {id: 'player'})-[:IST_IN]->(loc:Location)
         MATCH (item)-[:IST_IN]->(loc)

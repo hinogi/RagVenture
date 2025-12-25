@@ -20,12 +20,12 @@ class Action:
 
 class DialogState(Enum):
     MESSAGE = 'message'
-    REQUEST = 'request'
+    REQUEST_VERB = 'request_verb'
 
 @dataclass
 class Dialog:
     type: DialogState = DialogState.MESSAGE
-    text: str | None = None
+    message: str | None = None
     choices: list = field(default_factory=list)
 
 @dataclass

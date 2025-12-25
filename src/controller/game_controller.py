@@ -1,4 +1,3 @@
-import logging
 from view.game_view import GameView
 from model.world_model import GameModel
 from model.game_state import GameState, LoopState, DialogState
@@ -28,10 +27,10 @@ class GameController:
         input()
 
         self.view.update_location(self.model.current_location())
-        self.view.update_location(self.model.location_content())
+        self.view.update_items(self.model.location_items())
         self.view.update_exits(self.model.location_exits())
         self.view.update_inventory(self.model.player_inventory())
-        self.view.update_dialog([])
+        self.view.update_dialog()
 
         while self.state.running:
 
@@ -40,7 +39,6 @@ class GameController:
 
             # get input
             self.state.input = self.view.get_input()
-
 
             # quit
             if self.state.input == 'quit':
@@ -51,6 +49,7 @@ class GameController:
             if not self.state.input.strip():
                 continue
 
+            # do parsing
             if self.state.loop_state == LoopState.PARSE:
                 self._handle_parse()
 
@@ -66,7 +65,7 @@ class GameController:
                 # Target matching
                 all_targets = self._handle_target_candidates(
                     self.model.location_exits(),
-                    self.model.location_content(), 
+                    self.model.location_items(), 
                     self.model.player_inventory()
                 )
                 sim_targets = self.embedding_utils.match_entities(self.state.noun, all_targets)
@@ -81,12 +80,10 @@ class GameController:
                 
                 if self.state.command_list != []:
                     self.dialog.type = DialogState.REQUEST_VERB
-                    self.dialog.choices = self.state_
-
 
             if self.state.loop_state == LoopState.ACTION:
                 self.process_action()
-                self.state.loop_state == LoopState.PARSE
+                self.state.loop_state = LoopState.PARSE
 
     def _handle_target_candidates(self, exits, items, inventory):
 
@@ -120,23 +117,37 @@ class GameController:
             result = self.model.move_player(self.state.action.target)
 
             if result:
-                self.state.message = f'Du bist jetzt in {result[0]['name']}'
+                self.dialog.message = f'Du bist jetzt in {result[0]['name']}'
             else:
-                self.state.message = 'Ups, gestolpert?'
+                self.dialog.message = 'Ups, gestolpert?'
+
+            # view updates
+            self.view.update_location(self.model.current_location())
+            self.view.update_exits(self.model.location_exits())
+            self.view.update_items(self.model.location_items())
+            self.view.update_dialog(DialogState.MESSAGE, self.dialog.message)
 
         elif self.state.action.command == 'take':
 
             result = self.model.take_item(self.state.action.target)
             
             if result:
-                self.state.message =  f'Du trägst jetzt {result[0]['name']}'
+                self.dialog.message =  f'Du trägst jetzt {result[0]['name']}'
             else:
-                self.state.message =  'Ups, fallengelassen?'
+                self.dialog.message =  'Ups, fallengelassen?'
+
+            self.view.update_items(self.model.location_items())
+            self.view.update_inventory(self.model.player_inventory())
+            self.view.update_dialog(DialogState.MESSAGE, self.dialog.message)
 
         elif self.state.action.command == 'drop':
             result = self.model.drop_item(self.state.action.target)
             
             if result:
-                self.state.message =  f'Du hast {result[0]['name']} abgelegt.'
+                self.dialog.message =  f'Du hast {result[0]['name']} abgelegt.'
             else:
-                self.state.message =  'Ups, nicht da?'
+                self.dialog.message =  'Ups, nicht da?'
+
+            self.view.update_items(self.model.location_items())
+            self.view.update_inventory(self.model.player_inventory())
+            self.view.update_dialog(DialogState.MESSAGE, self.dialog.message)
