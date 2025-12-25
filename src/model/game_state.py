@@ -3,9 +3,10 @@ from dataclasses import dataclass, field
 
 
 class Status(Enum):
-    PARSE = 'wait_for_parsing'  # Wenn Eingaben durch den Parser müssen (Input zu Vern/Noun)
-    VERIFY = 'wait_for_verify'  # Wenn command und target verifiziert werden müssen (Verb/Noun zu Command/Target)
-    ACTION = 'wait_for_action'        # Wenn eine Action ausgeführt werden kann
+    PARSE = 'wait_for_parsing'   # Wenn Eingaben durch den Parser müssen (Input zu Vern/Noun)
+    VERIFY = 'wait_for_verify'   # Wenn command und target verifiziert werden müssen (Verb/Noun zu Command/Target)
+    REQUEST = 'wait_for_answers' # Wenn eine Auswahl getroffen werden muss
+    ACTION = 'wait_for_action'   # Wenn eine Action ausgeführt werden kann
 
 @dataclass
 class GameState:

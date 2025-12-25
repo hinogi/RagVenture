@@ -1,7 +1,7 @@
 import logging
 from view.game_view import GameView
 from model.world_model import GameModel
-from model.game_state import GameState
+from model.game_state import GameState, Status
 from utils.smart_parser import SmartParserUtils
 from utils.embedding_utils import EmbeddingUtils
 
@@ -29,14 +29,14 @@ class GameController:
 
         while self.state.running:
 
-            location= self.model.current_location(),
-            items= self.model.location_content(),
-            exits= self.model.location_exits(),
+            location= self.model.current_location()
+            items= self.model.location_content()
+            exits= self.model.location_exits()
             inventory= self.model.player_inventory()
 
             # rendering
             self.view.update_panels(location, items, exits, inventory)
-            self.view.refresh(status=status)
+            self.view.refresh(status=self.state.message)
 
             # get input
             self.state.input = self.view.get_input()
@@ -48,34 +48,50 @@ class GameController:
             if self.state.loop_state == 'PARSE':
 
                 # Parsing
-                parsed = self.parser_utils.parse(input)
+                parsed = self.parser_utils.parse(self.state.input)
                 self.state.verb = parsed[0]['verb']
                 self.state.noun = parsed[0]['noun']
 
                 # State
-                self.state.loop_state = 'VERIFY'
+                self.state.loop_state = Status.VERIFY
 
             if self.state.loop_state == 'VERIFY':
 
-                # Command finden
+                # Command matching
                 commands = self.embedding_utils.verb_to_command(self.state.verb)
                 good_commands = [c for c in commands if c['sim'] >= .95]
 
                 if len(good_commands) > 1 or len(good_commands) == 0:
                     self.state.command_list = good_commands
-                    self.state.message = "Was meinst Du?" 
-                    continue
 
-                # Target finden
+                # Target matching
+                all_targets = self._handle_target_candidates(exits, items, inventory)
+                sim_targets = self.embedding_utils.match_entities(self.state.noun, all_targets)
+                good_targets = [t for t in sim_targets if t['score'] >= .75]
 
-
-                # Commanding
-
-
+                if len(good_targets) > 1 or len(good_targets) == 0:
+                    self.state.target_list = good_targets
+                
+                self.state.loop_state == Status.REQUEST
 
             # run command
             status = self.process_input(self.conversation.input)
 
+    def _handle_target_candidates(self, exits, items, inventory):
+
+        candidates = []
+        
+        for e in exits:
+            e['type'] = 'exit'
+            candidates.append(e)
+        for i in items:
+            i['type'] = 'item'
+            candidates.append(i)
+        for i in inventory:
+            i['type'] = 'inventory'
+            candidates.append(i)
+        
+        return candidates
 
     def _handle_parse(self):
         pass
