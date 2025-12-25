@@ -18,6 +18,16 @@ class Action:
     command: ActionCommands | None = None
     target: str | None = None
 
+class DialogState(Enum):
+    MESSAGE = 'message'
+    REQUEST = 'request'
+
+@dataclass
+class Dialog:
+    type: DialogState = DialogState.MESSAGE
+    text: str | None = None
+    choices: list = field(default_factory=list)
+
 @dataclass
 class GameState:
     running: bool = False
@@ -31,6 +41,7 @@ class GameState:
     command_list: list = field(default_factory=list)
     target_list: list = field(default_factory=list)
 
+    dialog: Dialog | None = None
+
     action: Action | None = None
 
-    message: str | None = None

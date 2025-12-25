@@ -1,7 +1,7 @@
 import logging
 from view.game_view import GameView
 from model.world_model import GameModel
-from model.game_state import GameState, LoopStatus
+from model.game_state import GameState, LoopState, DialogState
 from utils.smart_parser import SmartParserUtils
 from utils.embedding_utils import EmbeddingUtils
 
@@ -27,35 +27,34 @@ class GameController:
         self.view.show_welcome()
         input()
 
+        self.view.update_location(self.model.current_location())
+        self.view.update_location(self.model.location_content())
+        self.view.update_exits(self.model.location_exits())
+        self.view.update_inventory(self.model.player_inventory())
+        self.view.update_dialog([])
+
         while self.state.running:
 
-            location= self.model.current_location()
-            items= self.model.location_content()
-            exits= self.model.location_exits()
-            inventory= self.model.player_inventory()
-
             # rendering
-            self.view.update_panels(location, items, exits, inventory, self.state.message)
-            self.view.refresh(status=self.state.message)
+            self.view.refresh()
 
             # get input
             self.state.input = self.view.get_input()
 
+
+            # quit
             if self.state.input == 'quit':
                 self.state.running = False
                 break
+            
+            # empty inputs
+            if not self.state.input.strip():
+                continue
 
-            if self.state.loop_state == LoopStatus.PARSE:
+            if self.state.loop_state == LoopState.PARSE:
+                self._handle_parse()
 
-                # Parsing
-                parsed = self.parser_utils.parse(self.state.input)
-                self.state.verb = parsed[0]['verb']
-                self.state.noun = parsed[0]['noun']
-
-                # State
-                self.state.loop_state = LoopStatus.VERIFY
-
-            if self.state.loop_state == LoopStatus.VERIFY:
+            if self.state.loop_state == LoopState.VERIFY:
 
                 # Command matching
                 commands = self.embedding_utils.verb_to_command(self.state.verb)
@@ -65,20 +64,29 @@ class GameController:
                     self.state.command_list = good_commands
 
                 # Target matching
-                all_targets = self._handle_target_candidates(exits, items, inventory)
+                all_targets = self._handle_target_candidates(
+                    self.model.location_exits(),
+                    self.model.location_content(), 
+                    self.model.player_inventory()
+                )
                 sim_targets = self.embedding_utils.match_entities(self.state.noun, all_targets)
                 good_targets = [t for t in sim_targets if t['score'] >= .75]
 
                 if len(good_targets) > 1 or len(good_targets) == 0:
                     self.state.target_list = good_targets
                 
-                self.state.loop_state = LoopStatus.REQUEST
+                self.state.loop_state = LoopState.REQUEST
             
-            if self.state.loop_state == LoopStatus.REQUEST:
-                pass
+            if self.state.loop_state == LoopState.REQUEST:
+                
+                if self.state.command_list != []:
+                    self.dialog.type = DialogState.REQUEST_VERB
+                    self.dialog.choices = self.state_
 
-            if self.state.loop_state == LoopStatus.ACTION:
+
+            if self.state.loop_state == LoopState.ACTION:
                 self.process_action()
+                self.state.loop_state == LoopState.PARSE
 
     def _handle_target_candidates(self, exits, items, inventory):
 
@@ -94,7 +102,13 @@ class GameController:
         return candidates
 
     def _handle_parse(self):
-        pass
+        # Parsing
+        parsed = self.parser_utils.parse(self.state.input)
+        self.state.verb = parsed[0]['verb']
+        self.state.noun = parsed[0]['noun']
+
+        # State
+        self.state.loop_state = LoopState.VERIFY
 
     def _handle_choise(self):
         pass
