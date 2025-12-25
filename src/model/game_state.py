@@ -11,7 +11,7 @@ class Status(Enum):
 @dataclass
 class GameState:
     running: bool = False
-    loop_state: Status.PARSE
+    loop_state: Status = Status.PARSE
 
     input: str | None = None
 
