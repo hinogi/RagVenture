@@ -21,6 +21,7 @@ class Action:
 class DialogState(Enum):
     MESSAGE = 'message'
     REQUEST_VERB = 'request_verb'
+    REQUEST_NOUN = 'request_noun'
 
 @dataclass
 class Dialog:

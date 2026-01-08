@@ -1,6 +1,6 @@
 from view.game_view import GameView
 from model.world_model import GameModel
-from model.game_state import GameState, LoopState, DialogState
+from model.game_state import GameState, LoopState, DialogState, Dialog
 from utils.smart_parser import SmartParserUtils
 from utils.embedding_utils import EmbeddingUtils
 
@@ -76,11 +76,34 @@ class GameController:
                 
                 self.state.loop_state = LoopState.REQUEST
             
+            # do requests
             if self.state.loop_state == LoopState.REQUEST:
                 
-                if self.state.command_list != []:
-                    self.dialog.type = DialogState.REQUEST_VERB
+                # verb/command request
+                if len(self.state.command_list) > 1:
 
+                    # Dialog updaten
+                    self.state.dialog = Dialog(
+                        type=DialogState.REQUEST_VERB,
+                        message="Was möchtest Du tun?",
+                        choices=self.state.command_list
+                    )
+                    self.view.update_dialog(self.state.dialog)
+                    continue
+
+                # noun/action request
+                if len(self.state.target_list) > 1:
+
+                    # Dialog updaten
+                    self.state.dialog = Dialog(
+                        type=DialogState.REQUEST_NOUN,
+                        message="Was meinst Du?",
+                        choices=self.state.target_list
+                    )
+                    self.view.update_dialog(self.state.dialog)
+                    continue
+
+            # do action
             if self.state.loop_state == LoopState.ACTION:
                 self.process_action()
                 self.state.loop_state = LoopState.PARSE
@@ -117,37 +140,37 @@ class GameController:
             result = self.model.move_player(self.state.action.target)
 
             if result:
-                self.dialog.message = f'Du bist jetzt in {result[0]['name']}'
+                self.state.dialog.message = f'Du bist jetzt in {result[0]['name']}'
             else:
-                self.dialog.message = 'Ups, gestolpert?'
+                self.state.dialog.message = 'Ups, gestolpert?'
 
             # view updates
             self.view.update_location(self.model.current_location())
             self.view.update_exits(self.model.location_exits())
             self.view.update_items(self.model.location_items())
-            self.view.update_dialog(DialogState.MESSAGE, self.dialog.message)
+            self.view.update_dialog(self.state.dialog)
 
         elif self.state.action.command == 'take':
 
             result = self.model.take_item(self.state.action.target)
             
             if result:
-                self.dialog.message =  f'Du trägst jetzt {result[0]['name']}'
+                self.state.dialog.message =  f'Du trägst jetzt {result[0]['name']}'
             else:
-                self.dialog.message =  'Ups, fallengelassen?'
+                self.state.dialog.message =  'Ups, fallengelassen?'
 
             self.view.update_items(self.model.location_items())
             self.view.update_inventory(self.model.player_inventory())
-            self.view.update_dialog(DialogState.MESSAGE, self.dialog.message)
+            self.view.update_dialog(self.state.dialog)
 
         elif self.state.action.command == 'drop':
             result = self.model.drop_item(self.state.action.target)
             
             if result:
-                self.dialog.message =  f'Du hast {result[0]['name']} abgelegt.'
+                self.state.dialog.message =  f'Du hast {result[0]['name']} abgelegt.'
             else:
-                self.dialog.message =  'Ups, nicht da?'
+                self.state.dialog.message =  'Ups, nicht da?'
 
             self.view.update_items(self.model.location_items())
             self.view.update_inventory(self.model.player_inventory())
-            self.view.update_dialog(DialogState.MESSAGE, self.dialog.message)
+            self.view.update_dialog(self.state.dialog)

@@ -79,12 +79,13 @@ class GameView:
             content = ''
 
             if dialog.type == 'message':
-                content = dialog.text
+                content = dialog.message
+
             elif dialog.type == 'request_verb':
                 for i, choice in enumerate(dialog.choices, 1):
                     content += f"({i}) {choice} | "
+                content += "(0) abbrechen"
 
-            content = "(0) abbrechen"
 
         self.layout['dialog'].update(Panel(content or "..."))
 
