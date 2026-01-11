@@ -115,17 +115,20 @@ class GameView:
             if dialog.type == DialogState.MESSAGE:
                 content = dialog.message
 
-            elif dialog.type == DialogState.REQUEST_VERB:
-                content = ''
-                for i, choice in enumerate(dialog.choices, 1):
-                    content += f"({i}) {choice} | "
-                content += "(0) abbrechen"
+            elif dialog.type == DialogState.REQUEST:
+                content = dialog.message + "\n\n"
 
-
-            elif dialog.type == DialogState.REQUEST_NOUN:
-                content = ''
                 for i, choice in enumerate(dialog.choices, 1):
-                    content += f"({i}) {choice['name']} | "
+                    # Command-Choice (hat 'command' key)
+                    if isinstance(choice, dict) and 'command' in choice:
+                        content += f"({i}) {choice['command']} | "
+                    # Target-Choice (hat 'name' key)
+                    elif isinstance(choice, dict) and 'name' in choice:
+                        content += f"({i}) {choice['name']} | "
+                    # Fallback
+                    else:
+                      content += f"({i}) {choice} | "
+
                 content += "(0) abbrechen"
 
         self.layout['dialog'].update(Panel(content))

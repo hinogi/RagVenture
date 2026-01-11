@@ -41,9 +41,6 @@ class GameController:
 
         while self.state.running:
 
-            # rendering
-            self.view.refresh()
-
             if self.state.loop_state == gs.LoopState.PARSE:
                 self._handle_parse()
 
@@ -56,24 +53,6 @@ class GameController:
             elif self.state.loop_state == gs.LoopState.ACTION:
                 self._handle_action()
 
-    def _handle_target_candidates(self, exits, items, inventory):
-        """
-        Sammelt alle möglichen Targets für Entity-Matching.
-
-        Kombiniert Exits, Items und Inventory zu einer Liste von Kandidaten
-        für das Embedding-basierte Target-Matching.
-        """
-        candidates = []
-        
-        for e in exits:
-            candidates.append(e)
-        for i in items:
-            candidates.append(i)
-        for i in inventory:
-            candidates.append(i)
-        
-        return candidates
-
     def _handle_parse(self):
         """
         PARSE State Handler - holt User-Input und extrahiert Verb/Noun.
@@ -85,6 +64,8 @@ class GameController:
         - → VERIFY: Input erfolgreich geparst
         - Bleibt in PARSE: Empty input oder quit
         """
+        self.view.refresh()  
+
         # get input
         self.state.parse.input = self.view.get_input()
 
@@ -127,6 +108,7 @@ class GameController:
             )
 
             self.view.update_dialog(self.state.dialog)
+            self.view.refresh()
             self.state.loop_state = gs.LoopState.PARSE
             return
 
@@ -136,15 +118,15 @@ class GameController:
         good_commands = [c for c in commands if c['sim'] >= .95]
 
         if len(good_commands) == 1:
-            # Eindeutig → direkt in Action
+            # Eindeutig
             self.state.action.command = gs.ActionCommands(good_commands[0]['command'])
         else:
-            # Mehrdeutig/unklar → für REQUEST speichern
-            self.state.parse.command_matches = good_commands
+            # Mehrdeutig/unklar
+            self.state.parse.good_commands = good_commands
 
 
         # Target matching
-        all_targets = self._handle_target_candidates(
+        all_targets = self._get_target_candidates(
             self.model.location_exits(),
             self.model.location_items(), 
             self.model.player_inventory()
@@ -155,7 +137,7 @@ class GameController:
         if len(good_targets) == 1:
             self.state.action.target = good_targets[0]['id']
         else:
-            self.state.parse.target_matches = good_targets
+            self.state.parse.good_targets = good_targets
 
 
         # Action komplett?
@@ -183,49 +165,45 @@ class GameController:
 
             # Dialog updaten
             self.state.dialog = gs.Dialog(
-                type=gs.DialogState.REQUEST_VERB,
+                type=gs.DialogState.REQUEST,
                 message="Was möchtest Du tun?",
                 choices=self.state.parse.good_commands
             )
             self.view.update_dialog(self.state.dialog)
+            self.view.refresh()
+            
+            # command to action
+            choice = self._get_choice(self.state.dialog)
+            if choice is None:
+                return
+            self.state.action.command = gs.ActionCommands(
+                self.state.parse.good_commands[choice - 1]['command']
+            )
 
         # noun/action request
         if len(self.state.parse.good_targets) > 1:
 
             # Dialog updaten
             self.state.dialog = gs.Dialog(
-                type=gs.DialogState.REQUEST_NOUN,
+                type=gs.DialogState.REQUEST,
                 message="Was meinst Du?",
                 choices=self.state.parse.good_targets
             )
+
             self.view.update_dialog(self.state.dialog)
-        
-        # choice?
-        if self.state.dialog.type in [gs.DialogState.REQUEST_VERB, gs.DialogState.REQUEST_NOUN]:
-            # validierung
-            try:
-                choice = int(self.state.parse.input)
-            except ValueError:
-                pass
-                # message
-                return
-        
-            # abbrechen
-            if choice == 0:
-                self.state.loop_state = gs.LoopState.PARSE
-                self.state.parse = gs.Parse()
-                self.state.dialog = gs.Dialog()
-                self.state.action = gs.Action()
-                return
-            
-            # command to action
-            if self.state.dialog.type == gs.DialogState.REQUEST_VERB:
-                self.state.action.command = self.state.parse.good_commands[choice - 1]['command']
+            self.view.refresh()
 
             # target to action
-            if self.state.dialog.type == gs.DialogState.REQUEST_NOUN:
-                self.state.action.target = self.state.parse.good_targets[choice - 1]['id']
-
+            choice = self._get_choice(self.state.dialog)
+            if choice is None:
+                return
+            self.state.action.target = self.state.parse.good_targets[choice - 1]['id']
+        
+        if self.state.action.command and self.state.action.target:
+            self.state.loop_state = gs.LoopState.ACTION
+        else:
+            self.state.loop_state = gs.LoopState.PARSE
+        
         return
 
     def _handle_action(self):
@@ -278,8 +256,51 @@ class GameController:
             self.view.update_inventory(self.model.player_inventory())
             self.view.update_dialog(self.state.dialog)
 
-
         self.state.loop_state = gs.LoopState.PARSE
         self.state.parse = gs.Parse()
         self.state.action = gs.Action()
-        self.state.action = gs.Dialog()
+        self.state.dialog = gs.Dialog()
+        self.view.refresh()
+
+
+    def _get_target_candidates(self, exits, items, inventory):
+        """
+        Sammelt alle möglichen Targets für Entity-Matching.
+
+        Kombiniert Exits, Items und Inventory zu einer Liste von Kandidaten
+        für das Embedding-basierte Target-Matching.
+        """
+        candidates = []
+        
+        for e in exits:
+            candidates.append(e)
+        for i in items:
+            candidates.append(i)
+        for i in inventory:
+            candidates.append(i)
+        
+        return candidates
+
+    def _get_choice(self, dialog):
+
+        self.state.parse.input = self.view.get_input()
+
+        if self.state.dialog.type  == gs.DialogState.REQUEST:
+            # validierung
+            try:
+                choice = int(self.state.parse.input)
+            except ValueError:
+                self.state.dialog.message = "Bitte Zahl eingeben"
+                self.view.update_dialog(self.state.dialog)
+                self.view.refresh()
+                return
+        
+            # abbrechen
+            if choice == 0:
+                self.state.loop_state = gs.LoopState.PARSE
+                self.state.parse = gs.Parse()
+                self.state.dialog = gs.Dialog()
+                self.state.action = gs.Action()
+                return None
+            else:
+                return choice

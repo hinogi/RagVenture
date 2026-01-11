@@ -33,8 +33,7 @@ class DialogState(Enum):
     """Dialog-Typen für User-Interaktion."""
     NONE = 'none'
     MESSAGE = 'message'
-    REQUEST_VERB = 'request_verb'
-    REQUEST_NOUN = 'request_noun'
+    REQUEST = 'request'
 
 @dataclass
 class Dialog:
