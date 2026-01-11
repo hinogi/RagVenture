@@ -57,8 +57,8 @@ class Parse:
     input: str | None
     verb: str | None
     noun: str | None
-    command_matches: list
-    target_matches: list
+    good_commands: list
+    good_targets: list
 
 @dataclass
 class Dialog:
