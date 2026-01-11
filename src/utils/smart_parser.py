@@ -1,3 +1,10 @@
+"""
+spaCy-basierter NLP Parser für deutsche Texteingaben.
+
+Extrahiert Verb und Noun aus natürlicher Sprache für Command-Matching.
+Nutzt de_dep_news_trf Model (Transformer-basiert).
+"""
+
 import spacy
 import logging
 from dotenv import load_dotenv
@@ -5,6 +12,12 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path='../.env')
 
 class SmartParserUtils:
+    """
+    NLP Parser für User-Input.
+
+    Lädt spaCy Model (de_dep_news_trf) und extrahiert ROOT-Verb und
+    erstes NOUN aus Sätzen. Loggt zu parser_debug.log.
+    """
 
     def __init__(self):
 
@@ -17,7 +30,18 @@ class SmartParserUtils:
         )
 
     def parse(self, input_text):
+        """
+        Parst User-Input zu Verb und Noun.
 
+        Args:
+            input_text (str): Natürlicher deutscher Satz
+
+        Returns:
+            list[dict]: [{verb, noun, adjects, raw}]
+                - verb: ROOT-Verb mit Partikeln (z.B. "ab legen")
+                - noun: Erstes gefundenes NOUN
+                - raw: Original-Input
+        """
         if not input_text or not input_text.strip():
             return [{'verb': None, 'noun': None, 'adjects': None, 'raw': input_text}]
     

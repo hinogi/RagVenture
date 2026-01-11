@@ -1,9 +1,22 @@
+"""
+Neo4j Game Model - DB-Zugriff für Spielwelt.
+
+Wrapper für Neo4j Cypher Queries. Verwaltet Connection und
+bietet typsichere Methoden für Location/Item/Inventory Queries.
+"""
+
 import os
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 
 
 class GameModel:
+    """
+    Model-Komponente im MVC-Pattern.
+
+    Kapselt alle Neo4j DB-Zugriffe. Single Source of Truth für
+    Spielwelt-State (Locations, Items, Inventory, Relationships).
+    """
     def __init__(self):
         # .env laden
         load_dotenv()
@@ -19,8 +32,9 @@ class GameModel:
         )
 
     def close(self):
+        """Schließt Neo4j Driver Connection sauber."""
         self.driver.close()
-    
+
     def _run_query(self, query, params=None):
         """
         führt eine einzelne Query aus
@@ -38,6 +52,12 @@ class GameModel:
             return [record.data() for record in result]
 
     def current_location(self):
+        """
+        Gibt aktuelle Player-Location zurück.
+
+        Returns:
+            list[dict]: Location mit id, name, description, name_emb
+        """
         query = """
         MATCH (p:Player {id: 'player'})-[:IST_IN]->(location:Location)
         RETURN 
@@ -49,6 +69,12 @@ class GameModel:
         return self._run_query(query)
 
     def location_items(self):
+        """
+        Gibt Items an aktueller Location zurück.
+
+        Returns:
+            list[dict]: Items mit id, name, description, name_emb
+        """
         query = """
         MATCH (p:Player {id: 'player'})-[:IST_IN]->(loc:Location)
         MATCH (item)-[:IST_IN]->(loc)
@@ -62,6 +88,12 @@ class GameModel:
         return self._run_query(query)
 
     def location_exits(self):
+        """
+        Gibt erreichbare Locations (Exits) zurück.
+
+        Returns:
+            list[dict]: Locations mit id, name, description, name_emb
+        """
         query = """
         MATCH (p:Player {id: 'player'})-[:IST_IN]->(location:Location)
         MATCH (location)-[:ERREICHT]->(exit:Location)
@@ -74,6 +106,12 @@ class GameModel:
         return self._run_query(query)
 
     def player_inventory(self):
+        """
+        Gibt Items im Player-Inventar zurück.
+
+        Returns:
+            list[dict]: Items mit id, name, name_emb
+        """
         query = """
         MATCH (p:Player {id: 'player'})-[:TRÄGT]->(inventory:Item)
         RETURN 
@@ -84,6 +122,15 @@ class GameModel:
         return self._run_query(query)
 
     def move_player(self, to_location):
+        """
+        Bewegt Player zu neuer Location.
+
+        Args:
+            to_location (str): Target Location ID
+
+        Returns:
+            list[dict]: Neue Location mit id, name, description oder [] bei Fehler
+        """
         query = """
         MATCH (p:Player {id: 'player'})-[old:IST_IN]->(current:Location)
         MATCH (current)-[:ERREICHT]->(target:Location {id: $to_location})
@@ -98,6 +145,15 @@ class GameModel:
         return self._run_query(query, params=params)
 
     def take_item(self, item):
+        """
+        Nimmt Item von Location in Inventar auf.
+
+        Args:
+            item (str): Item ID
+
+        Returns:
+            list[dict]: Item mit name oder [] bei Fehler
+        """
         query = """
         MATCH (p:Player {id: 'player'})-[:IST_IN]->(loc:Location)
         MATCH (i:Item {id: $item})-[old:IST_IN]->(loc)
@@ -110,6 +166,15 @@ class GameModel:
         return self._run_query(query, params=params)
 
     def drop_item(self, item):
+        """
+        Legt Item aus Inventar an aktueller Location ab.
+
+        Args:
+            item (str): Item ID
+
+        Returns:
+            list[dict]: Item mit name oder [] bei Fehler
+        """
         query = """
         MATCH (p:Player {id: 'player'})-[old:TRÄGT]->(i:Item {id: $item})
         MATCH (p)-[:IST_IN]->(loc:Location)
@@ -122,5 +187,12 @@ class GameModel:
         return self._run_query(query, params=params)
 
     def use_item(self, item, target):
+        """
+        Benutzt Item auf Target (noch nicht implementiert).
+
+        Args:
+            item (str): Item ID
+            target (str): Target Entity ID
+        """
         pass
 

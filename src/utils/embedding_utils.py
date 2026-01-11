@@ -37,7 +37,17 @@ class EmbeddingUtils:
         return cls._instance
 
     def verb_to_command(self, verb):
+        """
+        Matcht Verb zu Command via Cosine Similarity.
 
+        Args:
+            verb (str): Geparster Verb-String aus Parser
+
+        Returns:
+            list[dict]: Sortierte Commands [{command, sim}] (höchste zuerst)
+                - command: ActionCommand-String (go/take/drop)
+                - sim: Cosine Similarity (0.0-1.0)
+        """
         logging.info(f"=== Verb Input: '{verb}' ===")
         result =  []
 
@@ -65,7 +75,19 @@ class EmbeddingUtils:
         return result
     
     def match_entities(self, query_text: str, states: dict):
+        """
+        Matcht Noun zu Entity (Item/Location) via Cosine Similarity.
 
+        Args:
+            query_text (str): Geparster Noun-String aus Parser
+            states (list[dict]): Kandidaten-Liste mit name_emb Property
+
+        Returns:
+            list[dict]: Sortierte Entities [{id, name, score}] (höchste zuerst)
+                - id: Entity ID (z.B. 'taverne', 'schluessel')
+                - name: Entity Name (z.B. "Mo's Taverne")
+                - score: Cosine Similarity (0.0-1.0)
+        """
         candidates = [x for x in states]
 
         logging.info(f"=== Noun Import: '{query_text}' | Candidates: {candidates} ===")

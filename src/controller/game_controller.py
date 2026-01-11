@@ -21,6 +21,12 @@ class GameController:
         self.state = gs.GameState()
 
     def run_game(self):
+        """
+        Haupt-Game-Loop mit State-Machine Dispatcher.
+
+        Initialisiert UI, lädt initiale Location-Daten und dispatched
+        dann in endlosem Loop zu State-Handlern basierend auf loop_state.
+        """
         self.state.running = True
 
         # Intro :)
@@ -51,7 +57,12 @@ class GameController:
                 self._handle_action()
 
     def _handle_target_candidates(self, exits, items, inventory):
+        """
+        Sammelt alle möglichen Targets für Entity-Matching.
 
+        Kombiniert Exits, Items und Inventory zu einer Liste von Kandidaten
+        für das Embedding-basierte Target-Matching.
+        """
         candidates = []
         
         for e in exits:
@@ -64,7 +75,16 @@ class GameController:
         return candidates
 
     def _handle_parse(self):
+        """
+        PARSE State Handler - holt User-Input und extrahiert Verb/Noun.
 
+        Verarbeitet User-Eingaben (quit, empty, parsing) und extrahiert
+        mit spaCy Verb und Noun aus natürlicher Sprache.
+
+        Transitions:
+        - → VERIFY: Input erfolgreich geparst
+        - Bleibt in PARSE: Empty input oder quit
+        """
         # get input
         self.state.parse.input = self.view.get_input()
 
@@ -87,6 +107,18 @@ class GameController:
 
 
     def _handle_verify(self):
+        """
+        VERIFY State Handler - matcht Command und Target via Embeddings.
+
+        Validiert geparsten Input und nutzt Embedding-basiertes Matching
+        um Verb → Command (Threshold 0.95) und Noun → Target (Threshold 0.75)
+        zu finden. Bei eindeutigen Matches wird Action direkt gebaut.
+
+        Transitions:
+        - → ACTION: Command + Target eindeutig gefunden
+        - → REQUEST: Mehrdeutige Matches (User muss wählen)
+        - → PARSE: Validierungsfehler (kein Verb/Noun)
+        """
         # validierung
         if not self.state.parse.verb or not self.state.parse.noun:
             self.state.dialog = gs.Dialog(
@@ -135,7 +167,17 @@ class GameController:
 
 
     def _handle_request(self):
+        """
+        REQUEST State Handler - zeigt Dialog für mehrdeutige Auswahl.
 
+        Baut Dialog für Command- oder Target-Auswahl bei mehrdeutigen Matches.
+        Verarbeitet User-Choice und setzt action.command bzw. action.target.
+
+        Transitions:
+        - → ACTION: Action komplett (command + target gesetzt)
+        - → PARSE: User bricht ab (Choice 0)
+        - Bleibt in REQUEST: Ungültige Eingabe oder noch nicht komplett
+        """
         # verb/command request
         if len(self.state.parse.good_commands) > 1:
 
@@ -187,7 +229,15 @@ class GameController:
         return
 
     def _handle_action(self):
+        """
+        ACTION State Handler - führt validierte Action aus.
 
+        Verarbeitet GO, TAKE, DROP Commands, updated DB via Model,
+        aktualisiert View und setzt Feedback-Dialog.
+
+        Transitions:
+        - → PARSE: Nach erfolgreicher Ausführung (State wird resettet)
+        """
         if self.state.action.command == gs.ActionCommands.GO:
 
             result = self.model.move_player(self.state.action.target)
