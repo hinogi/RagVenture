@@ -4,7 +4,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.layout import Layout
 from rich.console import Console
-
+from model.game_state import DialogState
 
 class GameView:
     
@@ -81,14 +81,21 @@ class GameView:
         if dialog:
             content = ''
 
-            if dialog.type == 'message':
+            if dialog.type == DialogState.MESSAGE:
                 content = dialog.message
 
-            elif dialog.type == 'request_verb':
+            elif dialog.type == DialogState.REQUEST_VERB:
+                content = ''
                 for i, choice in enumerate(dialog.choices, 1):
                     content += f"({i}) {choice} | "
                 content += "(0) abbrechen"
 
+
+            elif dialog.type == DialogState.REQUEST_NOUN:
+                content = ''
+                for i, choice in enumerate(dialog.choices, 1):
+                    content += f"({i}) {choice['name']} | "
+                content += "(0) abbrechen"
 
         self.layout['dialog'].update(Panel(content))
 

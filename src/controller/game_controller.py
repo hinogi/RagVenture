@@ -1,6 +1,6 @@
 from view.game_view import GameView
 from model.world_model import GameModel
-from model.game_state import GameState, LoopState, DialogState, Dialog, ActionCommands
+import model.game_state as gs
 from utils.smart_parser import SmartParserUtils
 from utils.embedding_utils import EmbeddingUtils
 
@@ -18,7 +18,7 @@ class GameController:
         self.embedding_utils = EmbeddingUtils()
         
         # init states
-        self.state = GameState()
+        self.state = gs.GameState()
 
     def run_game(self):
         self.state.running = True
@@ -42,7 +42,7 @@ class GameController:
             self.state.parse.input = self.view.get_input()
 
             # quit
-            if self.state.parse.input == 'quit':
+            if self.state.parse.input in ['quit','exit',':q']:
                 self.state.running = False
                 break
             
@@ -51,7 +51,7 @@ class GameController:
                 continue
 
             # check dialog state
-            if self.state.loop_state == LoopState.REQUEST:
+            if self.state.loop_state == gs.LoopState.REQUEST:
 
                 # choice?
                 if self.state.dialog.type in ['request_verb', 'request_noun']:
@@ -60,20 +60,20 @@ class GameController:
 
 
             # do parsing
-            if self.state.loop_state == LoopState.PARSE:
+            if self.state.loop_state == gs.LoopState.PARSE:
                 self._handle_parse()
 
-            if self.state.loop_state == LoopState.VERIFY:
+            if self.state.loop_state == gs.LoopState.VERIFY:
 
                 # validierung
                 if not self.state.parse.verb or not self.state.parse.noun:
-                    self.state.dialog = Dialog(
-                        type=DialogState.MESSAGE,
+                    self.state.dialog = gs.Dialog(
+                        type=gs.DialogState.MESSAGE,
                         message="Das habe ich nicht verstanden."
                     )
 
                     self.view.update_dialog(self.state.dialog)
-                    self.state.loop_state = LoopState.PARSE
+                    self.state.loop_state = gs.LoopState.PARSE
                     continue
 
 
@@ -83,7 +83,7 @@ class GameController:
 
                 if len(good_commands) == 1:
                     # Eindeutig → direkt in Action
-                    self.state.action.command = ActionCommands(good_commands[0]['command'])
+                    self.state.action.command = gs.ActionCommands(good_commands[0]['command'])
                 else:
                     # Mehrdeutig/unklar → für REQUEST speichern
                     self.state.parse.command_matches = good_commands
@@ -106,19 +106,19 @@ class GameController:
 
                 # Action komplett?
                 if self.state.action.command and self.state.action.target:
-                    self.state.loop_state = LoopState.ACTION
+                    self.state.loop_state = gs.LoopState.ACTION
                 else:
-                    self.state.loop_state = LoopState.REQUEST
+                    self.state.loop_state = gs.LoopState.REQUEST
             
             # do requests
-            if self.state.loop_state == LoopState.REQUEST:
+            if self.state.loop_state == gs.LoopState.REQUEST:
                 
                 # verb/command request
                 if len(self.state.parse.good_commands) > 1:
 
                     # Dialog updaten
-                    self.state.dialog = Dialog(
-                        type=DialogState.REQUEST_VERB,
+                    self.state.dialog = gs.Dialog(
+                        type=gs.DialogState.REQUEST_VERB,
                         message="Was möchtest Du tun?",
                         choices=self.state.parse.good_commands
                     )
@@ -129,8 +129,8 @@ class GameController:
                 if len(self.state.parse.good_targets) > 1:
 
                     # Dialog updaten
-                    self.state.dialog = Dialog(
-                        type=DialogState.REQUEST_NOUN,
+                    self.state.dialog = gs.Dialog(
+                        type=gs.DialogState.REQUEST_NOUN,
                         message="Was meinst Du?",
                         choices=self.state.parse.good_targets
                     )
@@ -138,9 +138,11 @@ class GameController:
                     continue
 
             # do action
-            if self.state.loop_state == LoopState.ACTION:
+            if self.state.loop_state == gs.LoopState.ACTION:
                 self.process_action()
-                self.state.loop_state = LoopState.PARSE
+                self.state.loop_state = gs.LoopState.PARSE
+                self.state.parse = gs.Parse()
+                self.state.action = gs.Action()
 
     def _handle_target_candidates(self, exits, items, inventory):
 
@@ -162,7 +164,7 @@ class GameController:
         self.state.parse.noun = parsed[0]['noun']
 
         # State
-        self.state.loop_state = LoopState.VERIFY
+        self.state.loop_state = gs.LoopState.VERIFY
 
     def _handle_choise(self):
 
@@ -176,21 +178,24 @@ class GameController:
     
         # abbrechen
         if choice == 0:
-            self.state.loop_state = LoopState.PARSE
-            self.state.dialog = Dialog()
-
+            self.state.loop_state = gs.LoopState.PARSE
+            self.state.parse = gs.Parse()
+            self.state.dialog = gs.Dialog()
+            self.state.action = gs.Action()
+            return
+        
         # command to action
-        if self.state.dialog.type == DialogState.REQUEST_VERB:
+        if self.state.dialog.type == gs.DialogState.REQUEST_VERB:
             self.state.action.command = self.state.parse.good_commands[choice - 1]['command']
 
         # target to action
-        if self.state.dialog.type == DialogState.REQUEST_NOUN:
+        if self.state.dialog.type == gs.DialogState.REQUEST_NOUN:
             self.state.action.target = self.state.parse.good_targets[choice - 1]['id']
 
     
     def process_action(self):
 
-        if self.state.action.command == ActionCommands.GO:
+        if self.state.action.command == gs.ActionCommands.GO:
 
             result = self.model.move_player(self.state.action.target)
 
@@ -205,7 +210,7 @@ class GameController:
             self.view.update_items(self.model.location_items())
             self.view.update_dialog(self.state.dialog)
 
-        elif self.state.action.command == ActionCommands.TAKE:
+        elif self.state.action.command == gs.ActionCommands.TAKE:
 
             result = self.model.take_item(self.state.action.target)
             
@@ -218,7 +223,7 @@ class GameController:
             self.view.update_inventory(self.model.player_inventory())
             self.view.update_dialog(self.state.dialog)
 
-        elif self.state.action.command == ActionCommands.DROP:
+        elif self.state.action.command == gs.ActionCommands.DROP:
             result = self.model.drop_item(self.state.action.target)
             
             if result:
