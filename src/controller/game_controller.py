@@ -38,16 +38,25 @@ class GameController:
             self.view.refresh()
 
             # get input
-            self.state.input = self.view.get_input()
+            self.state.parse.input = self.view.get_input()
 
             # quit
-            if self.state.input == 'quit':
+            if self.state.parse.input == 'quit':
                 self.state.running = False
                 break
             
             # empty inputs
-            if not self.state.input.strip():
+            if not self.state.parse.input.strip():
                 continue
+
+            # check dialog state
+            if self.state.loop_state == LoopState.REQUEST:
+
+                # choice?
+                if self.state.dialog.type in ['request_verb', 'request_noun']:
+                    self._handle_choise
+                    continue
+
 
             # do parsing
             if self.state.loop_state == LoopState.PARSE:
@@ -60,7 +69,7 @@ class GameController:
                 good_commands = [c for c in commands if c['sim'] >= .95]
 
                 if len(good_commands) > 1 or len(good_commands) == 0:
-                    self.state.command_list = good_commands
+                    self.state.parse.good_commands = good_commands
 
                 # Target matching
                 all_targets = self._handle_target_candidates(
@@ -72,7 +81,7 @@ class GameController:
                 good_targets = [t for t in sim_targets if t['score'] >= .75]
 
                 if len(good_targets) > 1 or len(good_targets) == 0:
-                    self.state.target_list = good_targets
+                    self.state.parse.good_targets = good_targets
                 
                 self.state.loop_state = LoopState.REQUEST
             
@@ -80,7 +89,7 @@ class GameController:
             if self.state.loop_state == LoopState.REQUEST:
                 
                 # verb/command request
-                if len(self.state.command_list) > 1:
+                if len(self.state.parse.good_commands) > 1:
 
                     # Dialog updaten
                     self.state.dialog = Dialog(
@@ -92,7 +101,7 @@ class GameController:
                     continue
 
                 # noun/action request
-                if len(self.state.target_list) > 1:
+                if len(self.state.parse.good_targets) > 1:
 
                     # Dialog updaten
                     self.state.dialog = Dialog(
@@ -131,7 +140,24 @@ class GameController:
         self.state.loop_state = LoopState.VERIFY
 
     def _handle_choise(self):
-        pass
+
+        # validierung
+        try:
+            choice = int(self.state.input)
+        except ValueError:
+            pass
+            # message
+            return
+    
+        # abbrechen
+        if choice == 0:
+            self.state.loop_state == LoopState.PARSE
+            self.state.dialog == Dialog()
+
+        # command to action
+
+        # target to action
+
     
     def process_action(self):
 
