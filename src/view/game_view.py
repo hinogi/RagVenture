@@ -75,6 +75,9 @@ class GameView:
 
     def update_dialog(self, dialog=None):
         
+        # default
+        content = "..."
+
         if dialog:
             content = ''
 
@@ -87,7 +90,7 @@ class GameView:
                 content += "(0) abbrechen"
 
 
-        self.layout['dialog'].update(Panel(content or "..."))
+        self.layout['dialog'].update(Panel(content))
 
 
     def refresh(self):

@@ -1,8 +1,9 @@
 from view.game_view import GameView
 from model.world_model import GameModel
-from model.game_state import GameState, LoopState, DialogState, Dialog
+from model.game_state import GameState, LoopState, DialogState, Dialog, ActionCommands
 from utils.smart_parser import SmartParserUtils
 from utils.embedding_utils import EmbeddingUtils
+
 
 class GameController:
 
@@ -54,7 +55,7 @@ class GameController:
 
                 # choice?
                 if self.state.dialog.type in ['request_verb', 'request_noun']:
-                    self._handle_choise
+                    self._handle_choise()
                     continue
 
 
@@ -64,12 +65,29 @@ class GameController:
 
             if self.state.loop_state == LoopState.VERIFY:
 
+                # validierung
+                if not self.state.parse.verb or not self.state.parse.noun:
+                    self.state.dialog = Dialog(
+                        type=DialogState.MESSAGE,
+                        message="Das habe ich nicht verstanden."
+                    )
+
+                    self.view.update_dialog(self.state.dialog)
+                    self.state.loop_state = LoopState.PARSE
+                    continue
+
+
                 # Command matching
-                commands = self.embedding_utils.verb_to_command(self.state.verb)
+                commands = self.embedding_utils.verb_to_command(self.state.parse.verb)
                 good_commands = [c for c in commands if c['sim'] >= .95]
 
-                if len(good_commands) > 1 or len(good_commands) == 0:
-                    self.state.parse.good_commands = good_commands
+                if len(good_commands) == 1:
+                    # Eindeutig → direkt in Action
+                    self.state.action.command = ActionCommands(good_commands[0]['command'])
+                else:
+                    # Mehrdeutig/unklar → für REQUEST speichern
+                    self.state.parse.command_matches = good_commands
+
 
                 # Target matching
                 all_targets = self._handle_target_candidates(
@@ -77,13 +95,20 @@ class GameController:
                     self.model.location_items(), 
                     self.model.player_inventory()
                 )
-                sim_targets = self.embedding_utils.match_entities(self.state.noun, all_targets)
+                sim_targets = self.embedding_utils.match_entities(self.state.parse.noun, all_targets)
                 good_targets = [t for t in sim_targets if t['score'] >= .75]
 
-                if len(good_targets) > 1 or len(good_targets) == 0:
-                    self.state.parse.good_targets = good_targets
-                
-                self.state.loop_state = LoopState.REQUEST
+                if len(good_targets) == 1:
+                    self.state.action.target = good_targets[0]['id']
+                else:
+                    self.state.parse.target_matches = good_targets
+
+
+                # Action komplett?
+                if self.state.action.command and self.state.action.target:
+                    self.state.loop_state = LoopState.ACTION
+                else:
+                    self.state.loop_state = LoopState.REQUEST
             
             # do requests
             if self.state.loop_state == LoopState.REQUEST:
@@ -95,7 +120,7 @@ class GameController:
                     self.state.dialog = Dialog(
                         type=DialogState.REQUEST_VERB,
                         message="Was möchtest Du tun?",
-                        choices=self.state.command_list
+                        choices=self.state.parse.good_commands
                     )
                     self.view.update_dialog(self.state.dialog)
                     continue
@@ -107,7 +132,7 @@ class GameController:
                     self.state.dialog = Dialog(
                         type=DialogState.REQUEST_NOUN,
                         message="Was meinst Du?",
-                        choices=self.state.target_list
+                        choices=self.state.parse.good_targets
                     )
                     self.view.update_dialog(self.state.dialog)
                     continue
@@ -132,9 +157,9 @@ class GameController:
 
     def _handle_parse(self):
         # Parsing
-        parsed = self.parser_utils.parse(self.state.input)
-        self.state.verb = parsed[0]['verb']
-        self.state.noun = parsed[0]['noun']
+        parsed = self.parser_utils.parse(self.state.parse.input)
+        self.state.parse.verb = parsed[0]['verb']
+        self.state.parse.noun = parsed[0]['noun']
 
         # State
         self.state.loop_state = LoopState.VERIFY
@@ -143,7 +168,7 @@ class GameController:
 
         # validierung
         try:
-            choice = int(self.state.input)
+            choice = int(self.state.parse.input)
         except ValueError:
             pass
             # message
@@ -151,17 +176,21 @@ class GameController:
     
         # abbrechen
         if choice == 0:
-            self.state.loop_state == LoopState.PARSE
-            self.state.dialog == Dialog()
+            self.state.loop_state = LoopState.PARSE
+            self.state.dialog = Dialog()
 
         # command to action
+        if self.state.dialog.type == DialogState.REQUEST_VERB:
+            self.state.action.command = self.state.parse.good_commands[choice - 1]['command']
 
         # target to action
+        if self.state.dialog.type == DialogState.REQUEST_NOUN:
+            self.state.action.target = self.state.parse.good_targets[choice - 1]['id']
 
     
     def process_action(self):
 
-        if self.state.action.command == 'go':
+        if self.state.action.command == ActionCommands.GO:
 
             result = self.model.move_player(self.state.action.target)
 
@@ -176,7 +205,7 @@ class GameController:
             self.view.update_items(self.model.location_items())
             self.view.update_dialog(self.state.dialog)
 
-        elif self.state.action.command == 'take':
+        elif self.state.action.command == ActionCommands.TAKE:
 
             result = self.model.take_item(self.state.action.target)
             
@@ -189,7 +218,7 @@ class GameController:
             self.view.update_inventory(self.model.player_inventory())
             self.view.update_dialog(self.state.dialog)
 
-        elif self.state.action.command == 'drop':
+        elif self.state.action.command == ActionCommands.DROP:
             result = self.model.drop_item(self.state.action.target)
             
             if result:

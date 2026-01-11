@@ -74,7 +74,7 @@ class Action:
 @dataclass
 class GameState:
     running: bool
-    loop_state: LoopStatus         # PARSE, VERIFY, REQUEST, ACTION
+    loop_state: LoopState         # PARSE, VERIFY, REQUEST, ACTION
 
     parse: Parse
     dialog: Dialog
@@ -193,9 +193,11 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 1. **Check list bounds!** `match_entities()` kann `[]` zurückgeben
 2. **Parser returns list:** `parsed[0]['verb']` nicht `parsed['verb']`
 3. **Dataclass access:** `self.state.parse.verb` nicht `self.state['parse']['verb']`
-4. **Enum comparisons:** `self.state.loop_state == LoopStatus.PARSE`
-5. **Neo4j directions matter:** `(a)-[:REL]->(b)` ≠ `(a)<-[:REL]-(b)`
-6. **EmbeddingUtils is Singleton** (1.5GB model - load once!)
+4. **Enum comparisons:** `self.state.loop_state == LoopState.PARSE`
+5. **Action enum vs string:** `self.state.action.command == ActionCommands.GO` nicht `'go'`
+6. **Neo4j directions matter:** `(a)-[:REL]->(b)` ≠ `(a)<-[:REL]-(b)`
+7. **EmbeddingUtils is Singleton** (1.5GB model - load once!)
+8. **Parser can return None:** Always validate `verb` and `noun` before embedding calls
 
 ## Documentation
 

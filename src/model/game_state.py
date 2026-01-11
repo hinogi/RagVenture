@@ -1,7 +1,7 @@
 from enum import Enum
 from dataclasses import dataclass, field
 
-class LoopStatus(Enum):
+class LoopState(Enum):
     PARSE = 'wait_for_parsing'   # Wenn Eingaben durch den Parser müssen (Input zu Vern/Noun)
     VERIFY = 'wait_for_verify'   # Wenn command und target verifiziert werden müssen (Verb/Noun zu Command/Target)
     REQUEST = 'wait_for_answers' # Wenn eine Auswahl getroffen werden muss
@@ -41,7 +41,7 @@ class Action:
 @dataclass
 class GameState:
     running: bool = False
-    loop_state: LoopStatus = LoopStatus.PARSE
+    loop_state: LoopState = LoopState.PARSE
 
     parse: Parse = field(default_factory=Parse)
     dialog: Dialog = field(default_factory=Dialog)
