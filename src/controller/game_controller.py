@@ -44,8 +44,8 @@ class GameController:
             if self.state.loop_state == gs.LoopState.PARSE:
                 self._handle_parse()
 
-            elif self.state.loop_state == gs.LoopState.VERIFY:
-                self._handle_verify()
+            elif self.state.loop_state == gs.LoopState.MATCH:
+                self._handle_match()
 
             elif self.state.loop_state == gs.LoopState.REQUEST:
                 self._handle_request()
@@ -62,9 +62,8 @@ class GameController:
 
         Transitions:
         - → VERIFY: Input erfolgreich geparst
-        - Bleibt in PARSE: Empty input oder quit
+        - Bleibt in PARSE: Empty input oder nichts gefunden
         """
-        self.view.refresh()  
 
         # get input
         self.state.parse.input = self.view.get_input()
@@ -83,13 +82,24 @@ class GameController:
         self.state.parse.verb = parsed[0]['verb']
         self.state.parse.noun = parsed[0]['noun']
 
-        # State
-        self.state.loop_state = gs.LoopState.VERIFY
+        # validierung
+        if not self.state.parse.verb or not self.state.parse.noun:
+            self.state.dialog = gs.Dialog(
+                type=gs.DialogState.MESSAGE,
+                message="Das habe ich nicht verstanden."
+            )
+
+            self.state.parse = gs.Parse()
+            self.view.update_dialog(self.state.dialog)
+            self.view.refresh()
+            return
+        else:
+            self.state.loop_state = gs.LoopState.MATCH
 
 
-    def _handle_verify(self):
+    def _handle_match(self):
         """
-        VERIFY State Handler - matcht Command und Target via Embeddings.
+        MATCH State Handler - matcht Command und Target via Embeddings.
 
         Validiert geparsten Input und nutzt Embedding-basiertes Matching
         um Verb → Command (Threshold 0.95) und Noun → Target (Threshold 0.75)
@@ -98,20 +108,7 @@ class GameController:
         Transitions:
         - → ACTION: Command + Target eindeutig gefunden
         - → REQUEST: Mehrdeutige Matches (User muss wählen)
-        - → PARSE: Validierungsfehler (kein Verb/Noun)
         """
-        # validierung
-        if not self.state.parse.verb or not self.state.parse.noun:
-            self.state.dialog = gs.Dialog(
-                type=gs.DialogState.MESSAGE,
-                message="Das habe ich nicht verstanden."
-            )
-
-            self.view.update_dialog(self.state.dialog)
-            self.view.refresh()
-            self.state.loop_state = gs.LoopState.PARSE
-            return
-
 
         # Command matching
         commands = self.embedding_utils.verb_to_command(self.state.parse.verb)
@@ -145,7 +142,6 @@ class GameController:
             self.state.loop_state = gs.LoopState.ACTION
         else:
             self.state.loop_state = gs.LoopState.REQUEST
-
 
 
     def _handle_request(self):
@@ -202,6 +198,7 @@ class GameController:
         if self.state.action.command and self.state.action.target:
             self.state.loop_state = gs.LoopState.ACTION
         else:
+            self.state.dialog.message = 'Da ist was schief gelaufen'
             self.state.loop_state = gs.LoopState.PARSE
         
         return
