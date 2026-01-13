@@ -1,180 +1,157 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides quick orientation for Claude Code when starting a new chat session.
 
 ## Project Overview
 
-RagVenture is a German-language text-based adventure game using Neo4j graph database for world state, Rich library for terminal UI, and following MVC architecture. The project is in Phase 1 (MVP Foundation) with plans to integrate LLM-based narration and NPCs in later phases.
+**RagVenture** - German text-based adventure game for learning NLP, Graph-DBs, and Python.
 
-**Tech Stack:** Python 3.10+, Neo4j (Docker), Rich Terminal UI, spaCy (de_dep_news_trf), SentenceTransformers (paraphrase-multilingual-MiniLM-L12-v2), (future: Ollama for LLM integration)
+**Tech Stack:** Python 3.10+, Neo4j (Docker), Rich Terminal UI, spaCy (de_dep_news_trf), SentenceTransformers (paraphrase-multilingual-MiniLM-L12-v2)
 
-## Development Commands
+**Current Phase:** State-Machine refactoring (v0.9) - Building robust game loop with REQUEST handling
 
-### Environment Setup
+## Quick Start
+
 ```bash
-# Activate virtual environment
-source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
+source venv/bin/activate          # Activate environment
+docker start textadv-dev          # Start Neo4j (localhost:7474, neo4j/password)
+python src/main.py                # Run game
 
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Neo4j Database
-```bash
-# Check if Neo4j container is running
-docker ps | grep neo4j
-
-# Start existing container (if stopped)
-docker start textadv-dev
-
-# Access Neo4j Browser
-# URL: http://localhost:7474
-# Credentials: neo4j / password (from .env)
-
-# Reset database (WARNING: deletes all data)
-# Run in Neo4j Browser: MATCH (n) DETACH DELETE n
-# Then re-run notebooks/01-neo4j_dbsetup.ipynb
-```
-
-### Initialize World Data
-```bash
-# Start Jupyter and run setup notebook
-jupyter notebook
-# Open and execute: notebooks/01-neo4j_dbsetup.ipynb
-# This creates:
-# - Schema constraints (unique IDs)
-# - Vector indexes (for Smart Parser)
-# - Locations, Items, NPCs, Player
-# - Relationships (connections, placements, interactions)
-
-# Das Notebook nutzt Helper-Funktionen für typsichere Erstellung:
-# - create_item(), create_location(), create_npc(), create_player()
-# - connect_locations(), place_item(), make_key_unlock(), etc.
-# - Verhindert Tippfehler bei Relationship-Names
-```
-
-### Run Game
-```bash
-python src/main.py
-```
-
-### Debug Database State
-```bash
-# Use the debug script to inspect current game state
-python debug_db.py
+# Setup (first time):
+jupyter notebook                  # Run notebooks/01-neo4j_dbsetup.ipynb
 ```
 
 ## Architecture
 
-### MVC Pattern
-- **Model** (`src/model/game_model.py`): Neo4j database operations, all Cypher queries
-- **View** (`src/view/game_view.py`): Rich terminal UI, display logic only
-- **Controller** (`src/controller/game_controller.py`): Game loop, command routing, orchestration
-- **Parser** (`src/utils/smart_parser.py`): NLP-based parser using spaCy for verb/noun extraction
-- **Embedding Utils** (`src/utils/embedding_utils.py`): Singleton for semantic matching (verb→command, noun→entity)
+### MVC with State-Machine
 
-### Key Design Decisions
-
-**Neo4j Graph Schema:**
-- Nodes: `Player`, `Location`, `Item`, `NPC`
-- Relationships (vollständige Liste in `docs/world_schema.md`):
-  - `IST_IN` - location/containment (Item/NPC/Player → Location)
-  - `ERREICHT` - location connections (bidirektional)
-  - `TRÄGT` - player/NPC inventory
-  - `ÖFFNET` - item unlocks item/location (Schlüssel → Truhe)
-  - `KANN_ANZÜNDEN` - item lights item (Streichhölzer → Fackel)
-  - `BELEUCHTET` - item illuminates location (Fackel → Finsterwald)
-  - `KANN_BRECHEN` - item breaks item (Hammer → Truhe)
-- All IDs use lowercase, no spaces (e.g., `schluessel`, `taverne`)
-- Player node always has ID `'player'`
-- **WICHTIG:** Nur definierte Relationship-Types nutzen! (siehe `docs/world_schema.md`)
-
-**Cypher Query Patterns:**
-- Always use parameterized queries: `self._run_query(query, params={'key': value})`
-- Model methods return lists of dicts from Neo4j results
-- Use proper relationship directions: `(a)-[:REL]->(b)` matters
-- Filter by node labels in WHERE when needed: `WHERE 'Item' IN labels(entity)`
-
-**Entity Embeddings in Neo4j:**
-- Jedes Entity (Location, Item, NPC) hat eine `name_emb` Property
-- `name_emb` ist ein Float-Array (384 Dimensionen) vom SentenceTransformer
-- Wird beim Setup im Notebook generiert: `model.encode(name + " " + description)`
-- **WICHTIG:** Embeddings können NICHT in Neo4j gespeichert werden (kein Array-Type!)
-- **Workaround:** Embeddings werden im Notebook erstellt und bleiben in `game_state` (in-memory)
-- Entity-Matching passiert in Python, nicht in Cypher
-- Bei neuen Entities: Embedding in Notebook generieren und zu `name_emb` Property hinzufügen
-
-**Command Processing Flow:**
 ```
-User Input
-  → SmartParser (spaCy) → extracts verb + noun
-  → EmbeddingUtils.verb_to_command() → semantic matching (cosine similarity)
-  → Controller validates (threshold 0.95)
-  → EmbeddingUtils.match_entities() → finds target in game_state
-  → Model executes Cypher query
-  → Controller updates game_state
-  → View displays result
+┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+│ Controller  │ ───→ │ WorldModel  │ ───→ │   Neo4j     │
+│             │      │  (Queries)  │      │  (Graph DB) │
+│    State    │      └─────────────┘      └─────────────┘
+│   Machine   │           ↑
+└─────────────┘           │
+       │                  │
+       ↓                  │
+┌─────────────┐          │
+│    View     │          │
+│ (Rich UI)   │ ←────────┘
+└─────────────┘
 ```
 
-**Parser Output Format (SmartParser.parse()):**
+**State-Machine Flow:**
+```
+PARSE → VERIFY → REQUEST → ACTION → (zurück zu PARSE)
+
+PARSE:   User Input → spaCy → verb/noun extrahieren
+VERIFY:  verb/noun → Embedding-Matching → command/target finden
+REQUEST: Bei Mehrdeutigkeit → Dialog anzeigen → User-Auswahl verarbeiten
+ACTION:  Command ausführen → DB update → View refresh
+```
+
+**GameState Structure (src/model/game_state.py):**
 ```python
-[{
-    'verb': str | None,     # Lemmatized verb (e.g., "gehen" from "gehe")
-    'noun': str | None,     # First noun found (e.g., "Taverne")
-    'adjects': None,        # Reserved for future use
-    'raw': str              # Original input
-}]
+@dataclass
+class Parse:
+    input: str | None
+    verb: str | None
+    noun: str | None
+    good_commands: list
+    good_targets: list
+
+@dataclass
+class Dialog:
+    type: DialogState              # MESSAGE, REQUEST_VERB, REQUEST_NOUN
+    message: str | None
+    choices: list
+
+@dataclass
+class Action:
+    command: ActionCommands | None # GO, TAKE, DROP
+    target: str | None             # Entity ID
+
+@dataclass
+class GameState:
+    running: bool
+    loop_state: LoopState         # PARSE, VERIFY, REQUEST, ACTION
+
+    parse: Parse
+    dialog: Dialog
+    action: Action
 ```
 
-**Embedding Matching Output:**
+### Key Patterns
+
+**1. DB is Single Source of Truth**
 ```python
-# verb_to_command() returns:
-[
-    {'command': 'go', 'sim': 0.9999},
-    {'command': 'take', 'sim': 0.8708},
-    ...
-]  # Sorted by similarity, descending
-
-# match_entities() returns:
-[
-    {'id': 'taverne', 'name': "Mo's Taverne", 'score': tensor(0.95)},
-    {'id': 'wald', 'name': 'Finsterwald', 'score': tensor(0.42)},
-    ...
-]  # Sorted by score, descending
+# ALWAYS load fresh - no caching!
+location = self.model.current_location()
+items = self.model.location_items()
+exits = self.model.location_exits()
 ```
 
-### Current Game Commands
+**2. Atomic View Updates**
+```python
+# Nach Action: Update nur betroffene Panels
+self.view.update_location(location)
+self.view.update_items(items)
+self.view.update_dialog(dialog)
+self.view.refresh()  # Commit alle Änderungen
+```
 
-**Aktuell implementiert (mit Smart Parser):**
-- `go <location>` - Bewegen (versteht: gehen, laufen, rennen, besuchen, marschieren, wandern, etc.)
-- `take <item>` - Aufnehmen (versteht: nehmen, holen, packen, greifen, schnappen, etc.)
-- `drop <item>` - Ablegen (versteht: ablegen, wegwerfen, hinlegen, fallenlassen, etc.)
-- `quit` - Beenden (hardcoded, kein Parser)
+**3. Embedding-Matching**
+```python
+# Command-Matching (threshold 0.95)
+commands = embedding_utils.verb_to_command(verb)
+good = [c for c in commands if c['sim'] >= 0.95]
 
-**Geplante Commands (Parser vorbereitet, Game-Logik fehlt):**
-- `use <item> [on <target>]` - Item benutzen/kombinieren
-- `examine <object>` - Detailliert untersuchen
-- `read <item>` - Lesbares lesen
-- `talk [to] <npc>` - Mit NPC sprechen
-- `look` - Umgebung betrachten
+# Entity-Matching (threshold 0.70)
+targets = embedding_utils.match_entities(noun, candidates)
+good = [t for t in targets if t['score'] >= 0.70]
+```
 
-**Command-Validierung:**
-- Threshold für Verb-Matching: **0.95** (nur Commands mit >95% Similarity werden akzeptiert)
-- Bei mehrdeutigen Verben (>1 Match über Threshold): Rückfrage geplant (noch nicht implementiert)
-- Bei keinem Match: "Was möchtest du tun?"
+**4. Neo4j Queries**
+```python
+# Immer parameterisiert!
+query = "MATCH (p:Player {id: 'player'})-[:IST_IN]->(loc) RETURN loc"
+results = self._run_query(query, params={'id': 'player'})
+# Returns: list of dicts
+```
 
-**Vollständige Command-Referenz:** `docs/commands.md`
+### Project Structure
+
+```
+src/
+├── controller/game_controller.py  # State-Machine, _handle_parse/_choice
+├── model/
+│   ├── world_model.py             # Neo4j Queries (Cypher)
+│   └── game_state.py              # Parse, Dialog, Action Dataclasses
+├── view/game_view.py              # Rich UI (atomic updates)
+└── utils/
+    ├── smart_parser.py            # spaCy (verb/noun extraction)
+    └── embedding_utils.py         # SentenceTransformer (Singleton!)
+
+docs/
+├── architecture.md                # Detailed architecture docs
+├── world_schema.md                # Neo4j schema (Nodes, Relationships)
+└── commands.md                    # Command system reference
+
+notebooks/
+└── 01-neo4j_dbsetup.ipynb        # World initialization (typsafe helpers)
+```
 
 ## Git Workflow
 
-**Branch Strategy:**
-- `master` - main branch
-- Feature branches for new functionality (e.g., `world-interactions`, `model`)
-- **Always use `--no-ff` when merging** to preserve branch structure in git graph
+**You handle ALL git operations** (add, commit, merge, push, etc.)
+
+**Critical Rules:**
+- Always merge with `--no-ff` (no fast-forward)
+- Write descriptive commit messages
+- Ask if unsure about branch names or commit messages
 
 ```bash
-# Merge with visible branch structure
+# Merge pattern
 git checkout master
 git merge --no-ff feature-branch -m "Merge branch 'feature-branch' - Description"
 ```
@@ -183,133 +160,51 @@ git merge --no-ff feature-branch -m "Merge branch 'feature-branch' - Description
 ```
 feat: Short description
 
-Detailed explanation of changes:
+Detailed explanation:
 - Bullet point 1
 - Bullet point 2
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
-Co-Authored-By: Claude <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ```
 
 ## Important Context
 
 ### Language
-- All code comments, documentation, and user-facing text are in **German**
-- Variable names may be in English or German
-- Neo4j property names are in German
+- **All text in German**: Comments, docs, user-facing messages
+- Variable names: English or German (mixed)
+- Neo4j properties: German names
 
-### Database Connection
-- Connection params come from `.env` file (not committed)
-- Neo4j container name: `textadv-dev`
-- Ports: 7474 (HTTP), 7687 (Bolt)
-- Use `notifications_min_severity='OFF'` in driver config (optional, currently commented out)
+### Neo4j Schema Essentials
+- **Nodes:** Player, Location, Item, NPC
+- **Key Relationships:** IST_IN (containment), ERREICHT (connections), TRÄGT (inventory), ÖFFNET (unlocks)
+- **IDs:** Always lowercase, no spaces (e.g., `taverne`, `schluessel`)
+- **Player ID:** Always `'player'`
+- **Full schema:** `docs/world_schema.md`
 
-### Logging & Debugging
-- **Log-Datei:** `parser_debug.log` (im Projektroot, nicht committed)
-- **Log-Level:** INFO
-- **Was wird geloggt:**
-  - Parser Input/Output (Verb/Noun Extraktion)
-  - Embedding Matches mit Similarity-Scores
-  - Game State Updates
-- **Debugging-Tipps:**
-  - Bei Parser-Problemen: `tail -f parser_debug.log` während des Spielens
-  - Neo4j Browser: http://localhost:7474 für manuelle Queries
-  - `debug_db.py` für Spielzustand-Inspektion
-- **Wichtig:** `logging.basicConfig()` wird in mehreren Modulen aufgerufen (smart_parser, embedding_utils) - kann zu Konflikten führen, sollte zentralisiert werden
+### Commands (Current)
+- `go <location>` - Bewegung (versteht: gehen, laufen, rennen, ...)
+- `take <item>` - Aufnehmen (versteht: nehmen, holen, packen, ...)
+- `drop <item>` - Ablegen (versteht: ablegen, wegwerfen, ...)
+- `quit` - Beenden
 
-### Common Patterns
-
-**Adding a new Model method with Neo4j query:**
-```python
-def method_name(self, param):
-    query = """
-    MATCH (p:Player {id: 'player'})-[:IST_IN]->(loc:Location)
-    MATCH (entity)-[:RELATIONSHIP]->(target)
-    WHERE conditions
-    RETURN entity.property
-    """
-    params = {'param': param}
-    return self._run_query(query, params=params)
-```
-
-**Adding a new Controller command with Smart Parser:**
-```python
-# After verb/noun validation in process_input()
-elif best_command == 'new_command':
-    if not noun:
-        return "Was genau?"
-    else:
-        # Match entity from game_state
-        matches = self.embedding_utils.match_entities(
-            noun,
-            self.game_state['items']  # or 'exits', 'inventory', etc.
-        )
-
-        # Always check if matches found!
-        if not matches:
-            return f"Ich kann '{noun}' nicht finden."
-
-        # Execute command
-        result = self.model.new_command_method(matches[0]['id'])
-
-        if result:
-            return f"Erfolgsmeldung: {result[0]['name']}"
-        else:
-            return "Fehlermeldung"
-```
-
-**EmbeddingUtils Singleton Pattern:**
-```python
-# Automatisches Singleton - jeder Aufruf gibt gleiche Instanz zurück
-embedding_utils = EmbeddingUtils()  # Lädt Model beim ersten Mal
-embedding_utils2 = EmbeddingUtils() # Gibt gleiche Instanz zurück
-
-# Wichtig: Verhindert mehrfaches Laden des 1.5GB Models!
-# Model wird nur einmal in _instance gespeichert
-```
-
-### Known Gotchas
-
-1. **CRITICAL: Always check list bounds** - `match_entities()` kann leere Liste zurückgeben! IMMER prüfen: `if not matches: return error`
-2. **verb_to_command() returns list** - Nicht `command['best_command']` sondern `command[0]['command']` nach Filtern
-3. **Parser returns list of dicts** - `parsed[0]['verb']` nicht `parsed['verb']`
-4. **Python dict vs set syntax** - `{'key': value}` not `{'key', value}`
-5. **Relationship directions matter** - `(a)-[:REL]->(b)` is different from `(a)<-[:REL]-(b)`
-6. **Cache issues** - Restart `python src/main.py` after code changes (Python caches modules)
-7. **Label filtering** - Use `:Item` in MATCH or `WHERE 'Item' IN labels(entity)` to filter node types
-8. **Relationship-Types typo-prone** - Nutze Schema-Konstanten aus Notebook (REL_IST_IN, REL_ÖFFNET, etc.)
-9. **IDs must be lowercase, no spaces** - Helper-Funktionen im Notebook erzwingen dies automatisch
-10. **Property-Names sind case-sensitive** - `is_locked` nicht `is_Locked` oder `isLocked`
-11. **Embedding matching ist teuer** - spaCy Model + SentenceTransformer = ~2s pro Input auf schwacher Hardware
-12. **Logging-Config** - Mehrfaches `basicConfig()` in verschiedenen Modulen kann zu Konflikten führen
+### Common Gotchas
+1. **Check list bounds!** `match_entities()` kann `[]` zurückgeben
+2. **Parser returns list:** `parsed[0]['verb']` nicht `parsed['verb']`
+3. **Dataclass access:** `self.state.parse.verb` nicht `self.state['parse']['verb']`
+4. **Enum comparisons:** `self.state.loop_state == LoopState.PARSE`
+5. **Action enum vs string:** `self.state.action.command == ActionCommands.GO` nicht `'go'`
+6. **Neo4j directions matter:** `(a)-[:REL]->(b)` ≠ `(a)<-[:REL]-(b)`
+7. **EmbeddingUtils is Singleton** (1.5GB model - load once!)
+8. **Parser can return None:** Always validate `verb` and `noun` before embedding calls
 
 ## Documentation
 
-**Schema & Commands:**
-- `docs/world_schema.md` - **START HERE** - Vollständiges Schema (Nodes, Relationships, Properties)
-- `docs/commands.md` - Command-System (alle Commands, Verb-Mapping, Parser-Format)
+**Read when needed:**
+- `docs/architecture.md` - Detailed architecture & patterns
+- `docs/world_schema.md` - Complete Neo4j schema
+- `docs/commands.md` - Full command reference
+- `README.md` - Setup & project status
 
-**Technical Docs:**
-- `docs/neo4j_cheatsheet.md` - Cypher WHERE clause reference
-- `docs/architecture_idea.md` - Original architecture vision (für Referenz)
-- `docs/neo4j_docker.md` - Docker setup details
-
-**General:**
-- `README.md` - Setup instructions and roadmap
-- `CLAUDE.md` - This file
-
-**Notebooks:**
-- `notebooks/01-neo4j_dbsetup.ipynb` - **Database initialization mit Helper-Funktionen**
-- `notebooks/02-neo4j_commands.ipynb` - Query testing
-- `notebooks/03-smart-parser.ipynb` - Smart Parser development & testing
-
-## Future Roadmap Context
-
-The codebase is designed to eventually support:
-- LLM-based narrator (Ollama integration)
-- NPC personalities with individual prompts
-- Natural language parser (replacing current keyword parser)
-- Command Pattern refactoring (currently flat if/elif in Controller)
-
-When making changes, keep extensibility in mind but don't over-engineer for future phases.
+**Quick reference always in:** This file (CLAUDE.md)

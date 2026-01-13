@@ -1,10 +1,24 @@
-from dataclasses import dataclass
+"""
+Command Templates für Verb-zu-Command Matching.
 
+Definiert Verb-Listen für jedes Spiel-Command (go, take, drop, use, etc.)
+die für Embedding-basiertes Matching genutzt werden.
+"""
+
+from dataclasses import dataclass
 
 @dataclass
 class CommandTemplate:
+    """
+    Template für Command mit zugehörigen Verben.
+
+    Attributes:
+        command (str): Command-Name (go/take/drop/use/examine/read/talk/look)
+        verbs (list[str]): Synonym-Liste (Infinitiv + konjugierte Formen)
+        threshold (float): Similarity-Threshold (aktuell unused)
+    """
     command: str
-    verbs: list[str]  # Liste von Verben (Infinitiv + wichtige Formen)
+    verbs:  list[str]  # Liste von Verben (Infinitiv + wichtige Formen)
     threshold: float = 0.80
 
 

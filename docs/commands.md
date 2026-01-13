@@ -360,24 +360,236 @@ Input: `"Schau dich um"`
 
 ---
 
-## Disambiguation (Rückfragen)
+## Disambiguation (Rückfragen) mit ConversationSystem
 
-Wenn Object-Matching mehrdeutig ist:
+Das **ConversationSystem** stellt automatisch Rückfragen bei Mehrdeutigkeiten oder fehlenden Informationen. Der User antwortet mit nummerierten Auswahlen (1, 2, 3, ...).
 
-**Szenario:** Zwei Items mit ähnlichem Namen
-- "Goldener Schlüssel" (Score: 0.87)
-- "Silberner Schlüssel" (Score: 0.85)
+---
 
-**Controller-Handling:**
-1. Parser gibt beide Matches zurück
-2. Controller zeigt Rückfrage:
-   ```
-   Welchen Schlüssel meinst du?
-   [1] Goldener Schlüssel
-   [2] Silberner Schlüssel
-   ```
-3. User wählt: `1`
-4. Command wird ausgeführt mit gewähltem Item
+### Szenario 1: Fehlendes Objekt
+
+**User-Input:** `"gehe"`
+
+**Problem:** Command ist klar ("go"), aber kein Ziel angegeben.
+
+**Flow:**
+```
+User: "gehe"
+  ↓
+ConversationSystem: Phase 1 ✅ Command "go" eindeutig
+ConversationSystem: Phase 2 ❌ Kein Noun
+  ↓
+View: "Wohin möchtest du gehen?"
+      [1] Mo's Taverne
+      [2] Finsterwald
+      [3] Schmiede
+  ↓
+User: "2"
+  ↓
+ConversationSystem: Phase 2 ✅ Target "Finsterwald" gewählt
+  ↓
+Execution: move_player('wald')
+```
+
+---
+
+### Szenario 2: Mehrdeutige Entities
+
+**User-Input:** `"nimm schlüssel"`
+
+**Problem:** Mehrere Schlüssel vorhanden mit ähnlichem Namen.
+
+**Embedding-Matching:**
+```python
+matches = [
+    {'id': 'rostiger_schluessel', 'name': 'Rostiger Schlüssel', 'score': 0.85},
+    {'id': 'goldener_schluessel', 'name': 'Goldener Schlüssel', 'score': 0.83}
+]
+# Beide über TARGET_SIMILARITY_THRESHOLD (0.70) → Mehrdeutig!
+```
+
+**Flow:**
+```
+User: "nimm schlüssel"
+  ↓
+ConversationSystem: Phase 1 ✅ Command "take" eindeutig
+ConversationSystem: Phase 2 ❌ Mehrere Matches
+  ↓
+View: "Welchen Schlüssel meinst du?"
+      [1] Rostiger Schlüssel (alt und verbeult)
+      [2] Goldener Schlüssel (glänzt prächtig)
+  ↓
+User: "1"
+  ↓
+ConversationSystem: Phase 2 ✅ Target "Rostiger Schlüssel" gewählt
+  ↓
+Execution: take_item('rostiger_schluessel')
+```
+
+---
+
+### Szenario 3: Mehrdeutige Commands
+
+**User-Input:** `"mach feuer"`
+
+**Problem:** Verb "mach" kann mehrere Commands bedeuten.
+
+**Embedding-Matching:**
+```python
+command_matches = [
+    {'command': 'use', 'sim': 0.96},
+    {'command': 'examine', 'sim': 0.95}
+]
+# Beide über COMMAND_SIMILARITY_THRESHOLD (0.95) → Mehrdeutig!
+```
+
+**Flow:**
+```
+User: "mach feuer"
+  ↓
+ConversationSystem: Phase 1 ❌ Mehrere Commands
+  ↓
+View: "Was möchtest du tun?"
+      [1] benutzen (use)
+      [2] untersuchen (examine)
+  ↓
+User: "1"
+  ↓
+ConversationSystem: Phase 1 ✅ Command "use" gewählt
+ConversationSystem: Phase 2 → Weiter zu Target-Validierung...
+```
+
+---
+
+### Szenario 4: Abbrechen
+
+**User kann jederzeit abbrechen:**
+
+```
+User: "gehe"
+  ↓
+View: "Wohin möchtest du gehen?"
+      [1] Taverne
+      [2] Wald
+  ↓
+User: "abbrechen"
+  ↓
+Controller: state.conversation.reset()
+View: "Abgebrochen."
+Prompt: "> " (zurück zu normal)
+```
+
+**Abbrechen-Keywords:** `abbrechen`, `zurück`, `cancel`
+
+---
+
+### Validierungs-Schwellwerte
+
+**Command-Matching:**
+```python
+COMMAND_SIMILARITY_THRESHOLD = 0.95   # Sehr hoch - Commands müssen eindeutig sein
+```
+
+**Beispiel:**
+```
+Input: "gehe"
+Matches:
+  - 'go': 0.999 ✅ (über Threshold)
+  - 'take': 0.87 ❌ (unter Threshold)
+→ Eindeutig: "go"
+```
+
+**Target-Matching:**
+```python
+TARGET_SIMILARITY_THRESHOLD = 0.70    # Moderater - erlaubt Flexibilität bei Typos
+AMBIGUITY_GAP = 0.05                  # Minimaler Abstand für Eindeutigkeit
+```
+
+**Beispiel:**
+```
+Input: "nimm schlüssel"
+Matches:
+  - 'goldener_schluessel': 0.87
+  - 'silberner_schluessel': 0.85
+Gap = 0.02 < AMBIGUITY_GAP (0.05)
+→ Mehrdeutig! Rückfrage nötig
+```
+
+---
+
+### Multi-Turn Conversations
+
+Der ConversationState (Dataclass) speichert Rückfragen:
+
+```
+User: "nimm"
+  ↓
+Controller:
+  state.conversation.ask("Was möchtest du nehmen?", items)
+  # status = Status.REQUEST
+  ↓
+View: "Was möchtest du nehmen?" (Rückfrage)
+  ↓
+User: "2" (Antwort auf Rückfrage)
+  ↓
+Controller prüft: state.conversation.is_waiting() == True
+  → Wählt items[1], führt aus
+  → state.conversation.reset()
+```
+
+**Wichtig:** Prompt ändert sich:
+- Normal: `"> "`
+- Rückfrage: `"→ "` (wenn `state.conversation.is_waiting()`)
+
+---
+
+### Nummerierte Auswahl
+
+**User antwortet mit Zahlen:**
+```python
+# View zeigt:
+[1] Taverne
+[2] Wald
+[3] Schmiede
+
+# User tippt:
+"2"
+
+# Parser:
+choice = int(user_input) - 1  # 0-indexed: choice = 1
+selected = options[choice]     # options[1] = Wald
+```
+
+**Fehlerbehandlung:**
+```
+User: "5" (aber nur 3 Optionen)
+  ↓
+View: "Bitte wähle eine Nummer zwischen 1 und 3."
+```
+
+---
+
+### Implementation Details
+
+**Siehe:** `docs/conversation_system.md` für vollständige Architektur
+
+**Datenstrukturen:**
+```python
+@dataclass
+class Action:
+    command: str           # 'go', 'take', etc.
+    targets: List[dict]    # [{'id': '...', 'name': '...'}]
+    verb: str             # Original verb (Logging)
+    noun: str | None      # Original noun (Logging)
+
+@dataclass
+class ConversationResult:
+    status: str                    # 'action_ready', 'needs_clarification', 'error'
+    action: Action | None          # Bei action_ready
+    question: str | None           # Bei needs_clarification
+    options: List[dict] | None     # Bei needs_clarification
+    message: str | None            # Bei error/cancelled
+```
 
 ---
 
@@ -422,6 +634,6 @@ Geplant für spätere Phasen:
 
 ---
 
-**Version:** 1.0
-**Letzte Aktualisierung:** Dezember 2025
+**Version:** 1.2 (mit Statechart-Ready State)
+**Letzte Aktualisierung:** 21. Dezember 2024
 **Status:** Definition Complete ✅

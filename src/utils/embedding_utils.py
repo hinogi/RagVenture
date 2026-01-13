@@ -2,7 +2,7 @@ import logging
 from typing import List
 
 from sentence_transformers import SentenceTransformer, util
-from utils.command_templates import COMMAND_TEMPLATES, CommandTemplate
+from model.command_templates import COMMAND_TEMPLATES
 
 # Singleton damit der speicher nicht so schnell ausgeht :)
 
@@ -37,7 +37,17 @@ class EmbeddingUtils:
         return cls._instance
 
     def verb_to_command(self, verb):
+        """
+        Matcht Verb zu Command via Cosine Similarity.
 
+        Args:
+            verb (str): Geparster Verb-String aus Parser
+
+        Returns:
+            list[dict]: Sortierte Commands [{command, sim}] (höchste zuerst)
+                - command: ActionCommand-String (go/take/drop)
+                - sim: Cosine Similarity (0.0-1.0)
+        """
         logging.info(f"=== Verb Input: '{verb}' ===")
         result =  []
 
@@ -65,7 +75,19 @@ class EmbeddingUtils:
         return result
     
     def match_entities(self, query_text: str, states: dict):
+        """
+        Matcht Noun zu Entity (Item/Location) via Cosine Similarity.
 
+        Args:
+            query_text (str): Geparster Noun-String aus Parser
+            states (list[dict]): Kandidaten-Liste mit name_emb Property
+
+        Returns:
+            list[dict]: Sortierte Entities [{target, name, sim}] (höchste zuerst)
+                - target: Entity ID (z.B. 'taverne', 'schluessel')
+                - name: Entity Name (z.B. "Mo's Taverne")
+                - sim: Cosine Similarity (0.0-1.0)
+        """
         candidates = [x for x in states]
 
         logging.info(f"=== Noun Import: '{query_text}' | Candidates: {candidates} ===")
@@ -77,14 +99,16 @@ class EmbeddingUtils:
         # Einzeln mit kandidaten vergleichen
         for candidate in candidates:
 
-            score = self.util.cos_sim(query_emb, candidate['name_emb'])
+            similarities = self.util.cos_sim(query_emb, candidate['name_emb'])
+            max_sim = similarities.max().item()
+
             result.append({
-                'id': candidate['id'],
+                'target': candidate['id'],
                 'name': candidate['name'],
-                'score': score
+                'sim': max_sim
             })
 
         # Nach similarity sortieren
-        result.sort(key=lambda x: x['score'], reverse=True)
+        result.sort(key=lambda x: x['sim'], reverse=True)
         logging.info(f"=== Noun Output: {result} ===")
         return result
