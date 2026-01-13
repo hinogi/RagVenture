@@ -148,19 +148,26 @@ What? > _
 
 ## 📊 Status
 
-Aktuell läuft ein größeres Refactoring der Architektur. Der Parser und das Embedding-Matching funktionieren gut, jetzt geht's darum, den Game Loop sauber zu strukturieren.
-
 **Was läuft:**
 Der Parser holt sich Verben und Objekte zuverlässig aus den Sätzen. Das Verb-zu-Command-Mapping mit dem multilingualen Embedding-Model klappt überraschend gut - besser als die deutschsprachigen Alternativen die ich probiert habe. Entity-Matching funktioniert auch. Neo4j für den Spielzustand ist elegant, Relationships machen das Ganze schön übersichtlich.
 
-**Woran ich gerade arbeite:**
-State-Machine für den Game Loop. Statt verschachtelter Handler gibt's jetzt einen klaren Flow: PARSE → VERIFY → REQUEST → ACTION. Das macht den Code lesbarer und einfacher zu erweitern. Dazu gehören typsichere Enums (`LoopStatus`, `ActionCommands`) und Dataclasses (`GameState`, `Action`).
+State-Machine ist jetzt implementiert: PARSE → MATCH → REQUEST → ACTION. Der Flow ist klar strukturiert mit typsicheren Enums (`LoopState`, `ActionCommands`, `DialogState`) und Dataclasses (`GameState`, `Parse`, `Dialog`, `Action`). State-Transitions werden geloggt.
+
+**Bekannte Probleme:**
+- **spaCy mit de_dep_news_trf:** Die News-Trainingsdaten erkennen nicht alles korrekt. Manchmal werden Verben als Substantive klassifiziert oder umgekehrt. Workaround ist möglich (z.B. Fallback auf regelbasiertes Parsing), aber noch nicht integriert. Suche nach besserer Lösung (anderes Trainingsset oder hybrides Parsing).
+
+**Nächste Schritte:**
+- **Parser verbessern:** Hybrides Parsing (spaCy + Regelbasiert) oder alternatives Trainingsmodell
+- **Spielwelt ausbauen:** Mehr Locations, Items, NPCs hinzufügen
+- **Quest-System:** Quest-Logik implementieren (Ziele, Fortschritt, Belohnungen)
+- **Entity-Attribute:** Item-Properties (locked, lit, usable_with), NPC-States, komplexere Interaktionen
 
 **Bisherige Learnings:**
 - Das Model hat Probleme mit Tippfehlern - ist halt nicht darauf trainiert
 - Komplizierte Sätze sind schwierig (trainiert auf Nachrichten, nicht Umgangssprache)
 - Entity-Matching in Neo4j ging ohne Plugins nicht → läuft jetzt in Python
 - Deutschsprachiges Model (`gbert`) funktionierte schlechter als multilingual
+- spaCy News-Modell nicht optimal für Umgangssprache/Spielbefehle
 
 **Technisch:**
 - MVC-Pattern mit Controller als State-Machine
@@ -181,5 +188,5 @@ Kein fixer Plan - das entwickelt sich organisch je nachdem worauf ich grad Lust 
 ---
 
 **Version:** v0.9 (State-Machine Refactoring)
-**Letztes Update:** 25. Dezember 2024
+**Letztes Update:** 13. Januar 2026
 **Status:** In aktiver Entwicklung 🚧
