@@ -128,6 +128,8 @@ class GameController:
             self.view.refresh()
             self.state.set_state(gs.LoopState.PARSE)
             self.state.parse = gs.Parse()
+            return
+        
         elif len(good_commands) == 1:
             # Eindeutig
             self.state.action.command = gs.ActionCommands(good_commands[0]['command'])
@@ -154,6 +156,8 @@ class GameController:
             self.state.parse = gs.Parse()
             self.state.set_state(gs.LoopState.PARSE)
             self.view.refresh()
+            return
+        
         elif len(good_targets) == 1:
             self.state.action.target = good_targets[0]['target']
         else:
@@ -195,6 +199,7 @@ class GameController:
             choice = self._get_choice()
             if choice is None:
                 return
+            
             self.state.action.command = gs.ActionCommands(
                 self.state.parse.good_commands[choice - 1]['command']
             )
@@ -216,6 +221,7 @@ class GameController:
             choice = self._get_choice(self.state.dialog)
             if choice is None:
                 return
+            
             self.state.action.target = self.state.parse.good_targets[choice - 1]['id']
         
         if self.state.action.command and self.state.action.target:
