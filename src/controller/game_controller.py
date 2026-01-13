@@ -1,6 +1,6 @@
+import model.game_state as gs
 from view.game_view import GameView
 from model.world_model import GameModel
-import model.game_state as gs
 from utils.smart_parser import SmartParserUtils
 from utils.embedding_utils import EmbeddingUtils
 
@@ -33,11 +33,18 @@ class GameController:
         self.view.show_welcome()
         input()
 
-        self.view.update_location(self.model.current_location())
-        self.view.update_items(self.model.location_items())
-        self.view.update_exits(self.model.location_exits())
-        self.view.update_inventory(self.model.player_inventory())
+        location = self.model.current_location()
+        items = self.model.location_items()
+        exits = self.model.location_exits()
+        inventory = self.model.player_inventory()
+
+        self.view.update_location(location)
+        self.view.update_items(items)
+        self.view.update_exits(exits)
+        self.view.update_inventory(inventory)
         self.view.update_dialog()
+
+        self.view.refresh()
 
         while self.state.running:
 
@@ -88,13 +95,12 @@ class GameController:
                 type=gs.DialogState.MESSAGE,
                 message="Das habe ich nicht verstanden."
             )
-
             self.state.parse = gs.Parse()
             self.view.update_dialog(self.state.dialog)
             self.view.refresh()
             return
         else:
-            self.state.loop_state = gs.LoopState.MATCH
+            self.state.set_state(gs.LoopState.MATCH)
 
 
     def _handle_match(self):
@@ -114,7 +120,15 @@ class GameController:
         commands = self.embedding_utils.verb_to_command(self.state.parse.verb)
         good_commands = [c for c in commands if c['sim'] >= .95]
 
-        if len(good_commands) == 1:
+        if len(good_commands) == 0:
+            self.state.dialog = gs.Dialog(
+                type = gs.DialogState.MESSAGE,
+                message = 'Es wurde kein passendes Verb gefunden.'
+            )
+            self.view.refresh()
+            self.state.set_state(gs.LoopState.PARSE)
+            self.state.parse = gs.Parse()
+        elif len(good_commands) == 1:
             # Eindeutig
             self.state.action.command = gs.ActionCommands(good_commands[0]['command'])
         else:
@@ -129,19 +143,28 @@ class GameController:
             self.model.player_inventory()
         )
         sim_targets = self.embedding_utils.match_entities(self.state.parse.noun, all_targets)
-        good_targets = [t for t in sim_targets if t['score'] >= .75]
+        good_targets = [t for t in sim_targets if t['sim'] >= .75]
 
-        if len(good_targets) == 1:
-            self.state.action.target = good_targets[0]['id']
+        if len(good_targets) == 0:
+            self.state.dialog = gs.Dialog(
+                type = gs.DialogState.MESSAGE,
+                message = 'Es wurde kein passendes Substantiv gefunden.'
+            )
+            self.view.update_dialog(self.state.dialog)
+            self.state.parse = gs.Parse()
+            self.state.set_state(gs.LoopState.PARSE)
+            self.view.refresh()
+        elif len(good_targets) == 1:
+            self.state.action.target = good_targets[0]['target']
         else:
             self.state.parse.good_targets = good_targets
 
 
         # Action komplett?
         if self.state.action.command and self.state.action.target:
-            self.state.loop_state = gs.LoopState.ACTION
+            self.state.set_state(gs.LoopState.ACTION)
         else:
-            self.state.loop_state = gs.LoopState.REQUEST
+            self.state.set_state(gs.LoopState.REQUEST)
 
 
     def _handle_request(self):
@@ -169,7 +192,7 @@ class GameController:
             self.view.refresh()
             
             # command to action
-            choice = self._get_choice(self.state.dialog)
+            choice = self._get_choice()
             if choice is None:
                 return
             self.state.action.command = gs.ActionCommands(
@@ -196,10 +219,13 @@ class GameController:
             self.state.action.target = self.state.parse.good_targets[choice - 1]['id']
         
         if self.state.action.command and self.state.action.target:
-            self.state.loop_state = gs.LoopState.ACTION
+            self.state.set_state(gs.LoopState.ACTION)
         else:
-            self.state.dialog.message = 'Da ist was schief gelaufen'
-            self.state.loop_state = gs.LoopState.PARSE
+            self.state.dialog = gs.Dialog(
+                type=gs.DialogState.MESSAGE,
+                message='Da ist was schief gelaufen'
+            )
+            self.state.set_state(gs.LoopState.PARSE)
         
         return
 
@@ -218,9 +244,15 @@ class GameController:
             result = self.model.move_player(self.state.action.target)
 
             if result:
-                self.state.dialog.message = f'Du bist jetzt in {result[0]['name']}'
+                self.state.dialog = gs.Dialog(
+                    type=gs.DialogState.MESSAGE,
+                    message=f'Du bist jetzt in {result[0]['name']}'
+                )
             else:
-                self.state.dialog.message = 'Ups, gestolpert?'
+                self.state.dialog = gs.Dialog(
+                    type=gs.DialogState.MESSAGE,
+                    message='Ups, gestolpert?'
+                ) 
 
             # view updates
             self.view.update_location(self.model.current_location())
@@ -233,9 +265,15 @@ class GameController:
             result = self.model.take_item(self.state.action.target)
             
             if result:
-                self.state.dialog.message =  f'Du trägst jetzt {result[0]['name']}'
+                self.state.dialog = gs.Dialog(
+                    type=gs.DialogState.MESSAGE,
+                    message=f'Du trägst jetzt {result[0]['name']}'
+                )
             else:
-                self.state.dialog.message =  'Ups, fallengelassen?'
+                self.state.dialog = gs.Dialog(
+                    type=gs.DialogState.MESSAGE,
+                    message='Ups, fallengelassen?'
+                )
 
             self.view.update_items(self.model.location_items())
             self.view.update_inventory(self.model.player_inventory())
@@ -245,18 +283,24 @@ class GameController:
             result = self.model.drop_item(self.state.action.target)
             
             if result:
-                self.state.dialog.message =  f'Du hast {result[0]['name']} abgelegt.'
+                self.state.dialog = gs.Dialog(
+                    type=gs.DialogState.MESSAGE,
+                    message=f'Du hast {result[0]['name']} abgelegt.'
+                )
             else:
-                self.state.dialog.message =  'Ups, nicht da?'
+                self.state.dialog = gs.Dialog(
+                    type=gs.DialogState.MESSAGE,
+                    message='Ups, nicht da?'
+                )
 
             self.view.update_items(self.model.location_items())
             self.view.update_inventory(self.model.player_inventory())
             self.view.update_dialog(self.state.dialog)
 
-        self.state.loop_state = gs.LoopState.PARSE
-        self.state.parse = gs.Parse()
         self.state.action = gs.Action()
         self.state.dialog = gs.Dialog()
+        self.state.parse = gs.Parse()
+        self.state.set_state(gs.LoopState.PARSE)
         self.view.refresh()
 
 
@@ -278,7 +322,7 @@ class GameController:
         
         return candidates
 
-    def _get_choice(self, dialog):
+    def _get_choice(self):
 
         self.state.parse.input = self.view.get_input()
 
@@ -294,10 +338,10 @@ class GameController:
         
             # abbrechen
             if choice == 0:
-                self.state.loop_state = gs.LoopState.PARSE
-                self.state.parse = gs.Parse()
                 self.state.dialog = gs.Dialog()
                 self.state.action = gs.Action()
+                self.state.parse = gs.Parse()
+                self.state.set_state(gs.LoopState.PARSE)
                 return None
             else:
                 return choice

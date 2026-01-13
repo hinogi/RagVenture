@@ -5,8 +5,16 @@ Definiert die komplette State-Struktur des Spiels: LoopState, Parse,
 Dialog, Action und GameState für den Controller.
 """
 
+import logging
 from enum import Enum
 from dataclasses import dataclass, field
+
+
+logging.basicConfig(
+    filename='parser_debug.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s'
+)
 
 class LoopState(Enum):
     """State-Machine States für den Game Loop."""
@@ -80,3 +88,13 @@ class GameState:
     dialog: Dialog = field(default_factory=Dialog)
     action: Action = field(default_factory=Action)
 
+    def set_state(self, new_state: LoopState):
+        """
+        Setzt loop_state und loggt die Änderung
+
+        Args:
+            new_state: Neuer LoopState
+        """
+        old_state = self.loop_state
+        self.loop_state = new_state
+        logging.info(f"### {old_state} >>> {new_state}")

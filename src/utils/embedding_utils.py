@@ -83,10 +83,10 @@ class EmbeddingUtils:
             states (list[dict]): Kandidaten-Liste mit name_emb Property
 
         Returns:
-            list[dict]: Sortierte Entities [{id, name, score}] (höchste zuerst)
-                - id: Entity ID (z.B. 'taverne', 'schluessel')
+            list[dict]: Sortierte Entities [{target, name, sim}] (höchste zuerst)
+                - target: Entity ID (z.B. 'taverne', 'schluessel')
                 - name: Entity Name (z.B. "Mo's Taverne")
-                - score: Cosine Similarity (0.0-1.0)
+                - sim: Cosine Similarity (0.0-1.0)
         """
         candidates = [x for x in states]
 
@@ -99,14 +99,16 @@ class EmbeddingUtils:
         # Einzeln mit kandidaten vergleichen
         for candidate in candidates:
 
-            score = self.util.cos_sim(query_emb, candidate['name_emb'])
+            similarities = self.util.cos_sim(query_emb, candidate['name_emb'])
+            max_sim = similarities.max().item()
+
             result.append({
-                'id': candidate['id'],
+                'target': candidate['id'],
                 'name': candidate['name'],
-                'score': score
+                'sim': max_sim
             })
 
         # Nach similarity sortieren
-        result.sort(key=lambda x: x['score'], reverse=True)
+        result.sort(key=lambda x: x['sim'], reverse=True)
         logging.info(f"=== Noun Output: {result} ===")
         return result
