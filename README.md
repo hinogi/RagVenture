@@ -1,3 +1,5 @@
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/hinogi/RagVenture/HEAD)
+
 # RagVenture - NLP Text Adventure
 
 Ein textbasiertes Adventure-Game als **Lernprojekt für NLP, Graph-Datenbanken und Python**.
